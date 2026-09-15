@@ -218,6 +218,15 @@ body = c.get("/").get_data(as_text=True)
 check("имя сотрудника — кликабельная ссылка", f'class="emp-link" href="/employee/{eid}"' in body)
 check("ссылки 'Открыть →' больше нет", "Открыть →" not in body)
 
+# --- сотрудник без годов: нет неделимого 2026 по умолчанию ---
+c.post("/employee/new", data={
+    "name": "Сидоров БезГодов", "position_id": "", "department_id": "", "salary": ""
+}, follow_redirects=True)
+eid_noyear = dbq("SELECT id FROM employees WHERE name='Сидоров БезГодов'")[0]["id"]
+body = c.get(f"/employee/{eid_noyear}").get_data(as_text=True)
+check("нет записей → видна заглушка о создании года", "нет созданных годов" in body)
+check("у сотрудника без годов нет неделимого 2026", "Полугодовые записи · 2026" not in body and "Цели сотрудника" not in body)
+
 # второй сотрудник в другом отделе и другой должности
 c.post("/catalog/position/add", data={"name": "Стажёр"})
 c.post("/catalog/department/add", data={"name": "ТП Сбер"})

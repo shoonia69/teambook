@@ -483,8 +483,8 @@ def employee_view(eid):
         (eid,),
     ).fetchall()
     year = request.args.get("year", type=int, default=None)
-    if year is None:
-        year = years[0]["year"] if years else datetime.now().year
+    if year is None and years:
+        year = years[0]["year"]
 
     records = db.execute(
         "SELECT * FROM year_records WHERE employee_id=? AND year=?",
@@ -520,6 +520,7 @@ def employee_view(eid):
         meetings=meetings,
         history=history,
         positions=positions,
+        now_year=datetime.now().year,
     )
 
 
