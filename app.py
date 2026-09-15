@@ -1005,7 +1005,8 @@ def _build_report_pdf(data, title):
         "Base", parent=styles["Normal"], fontName=fn, fontSize=7.5,
         leading=9, wordWrap="CJK")
     hstyle = ParagraphStyle(
-        "H", parent=base, fontName=fn if fn == "DejaVuSans" else "Helvetica-Bold",
+        "H", parent=base,
+        fontName="DejaVuSans-Bold" if fn == "DejaVuSans" else fn,
         fontSize=8, leading=10, textColor=colors.white)
     title_style = ParagraphStyle(
         "Title", parent=base, fontSize=14, leading=18, spaceAfter=8)
@@ -1063,10 +1064,16 @@ def _build_employee_pdf(data, title):
     story = [Paragraph(title, title_style)]
 
     item = data[0]
+    # стиль подписей (label) и значений — ОБЯЗАТЕЛЬНО с кириллическим шрифтом
+    label_st = ParagraphStyle("Lbl", parent=base, fontName=fn, fontSize=9,
+                              leading=11, textColor=colors.HexColor("#33415C"))
+    val_st = ParagraphStyle("Val", parent=base, fontName=fn, fontSize=9, leading=11)
     story.append(Table(
-        [["Сотрудник", item["name"]], ["Отдел", item["department"]],
-         ["Должность", item["position"]], ["Зарплата", item["salary"]],
-         ["Дата приёма", _fmt_date(item["hire_date"])]],
+        [[Paragraph("Сотрудник", label_st), Paragraph(item["name"] or "—", val_st)],
+         [Paragraph("Отдел", label_st), Paragraph(item["department"] or "—", val_st)],
+         [Paragraph("Должность", label_st), Paragraph(item["position"] or "—", val_st)],
+         [Paragraph("Зарплата", label_st), Paragraph(item["salary"] or "—", val_st)],
+         [Paragraph("Дата приёма", label_st), Paragraph(_fmt_date(item["hire_date"]) or "—", val_st)]],
         colWidths=[40*mm, 130*mm],
         style=TableStyle([
             ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#9AA7BC")),
