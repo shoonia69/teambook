@@ -1,0 +1,15 @@
+services:
+  hr-notes:
+    image: ghcr.io/shoonia69/hr-notes:latest
+    container_name: hr-notes
+    restart: unless-stopped
+    environment:
+      - HR_PASSWORD=${HR_PASSWORD:?задайте HR_PASSWORD в .env}
+      - HR_SECRET_KEY=${HR_SECRET_KEY:?задайте HR_SECRET_KEY в .env}
+    volumes:
+      - hr_notes_data:/app/data
+    ports:
+      - "5500:5000"
+
+volumes:
+  hr_notes_data:

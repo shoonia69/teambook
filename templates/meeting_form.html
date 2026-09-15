@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} · TeamBook{% endblock %}
+{% block content %}
+<div class="card" style="max-width:800px">
+  <h2>{{ title }}</h2>
+  <form method="post">
+    <div class="form-grid">
+      <div class="full">
+        <label>Дата встречи (пусто = сегодня)</label>
+        <input type="date" name="date" value="{{ mt.date or '' }}" style="max-width:220px">
+      </div>
+      <div class="full">
+        <label>Итоги встречи 1-на-1 (темы, договорённости, задачи)</label>
+        <textarea name="summary" style="min-height:180px"
+                  placeholder="Что обсуждали, к чему пришли, какие договорённости/задачи.">{{ mt.summary or '' }}</textarea>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn primary" type="submit">Сохранить</button>
+      <a class="btn" href="{{ url_for('employee_view', eid=eid) }}">Отмена</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

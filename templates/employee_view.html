@@ -1,0 +1,255 @@
+{% extends "base.html" %}
+{% block title %}{{ emp.name }} · TeamBook{% endblock %}
+{% block content %}
+
+<!-- Карточка сотрудника -->
+<div class="card">
+  <div class="toolbar" style="margin-bottom:8px">
+    <h2 style="margin:0">{{ emp.name }}</h2>
+    <div class="spacer"></div>
+    <a class="btn small" href="{{ url_for('employee_edit', eid=emp.id) }}">Редактировать</a>
+    <form method="post" action="{{ url_for('employee_delete', eid=emp.id) }}"
+          onsubmit="return confirm('Удалить сотрудника «{{ emp.name }}» и все записи?')">
+      <button class="btn small danger" type="submit">Удалить</button>
+    </form>
+  </div>
+  <div style="color:var(--muted)">
+    {{ emp.position or '—' }}{% if emp.position and emp.department %} · {% endif %}{{ emp.department or '' }}
+    {% if emp.salary %} · <strong style="color:var(--text)">{{ emp.salary }}</strong>{% endif %}
+    {% if emp.hire_date %} · <span title="Дата приёма на работу">принят с {{ (emp.hire_date or '')[:10] }}</span>{% endif %}
+  </div>
+</div>
+
+<!-- История изменений должности/зарплаты -->
+<details class="card accordion" data-acc="history">
+  <summary class="acc-summary"><span class="acc-title">История изменения должности и зарплаты</span>
+    <span class="acc-count">{% if history %}· {{ history|length }} зап.{% endif %}</span>
+    <span class="acc-toggle">свернуть/развернуть</span>
+  </summary>
+  <div class="acc-body">
+  <div class="toolbar" style="margin-bottom:8px">
+    <div class="spacer"></div>
+    <details class="inline-add">
+      <summary class="btn small">+ Добавить запись</summary>
+      <div class="card" style="margin-top:10px;padding:14px">
+        <form method="post" action="{{ url_for('history_add', eid=emp.id) }}">
+          <div class="form-grid">
+            <div>
+              <label>Дата изменения *</label>
+              <input type="date" name="change_date" required>
+            </div>
+            <div>
+              <label>Должность</label>
+              <select name="position_id">
+                <option value="">— не менялась —</option>
+                {% for p in positions %}
+                  <option value="{{ p.id }}">{{ p.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label>Зарплата</label>
+              <input type="text" name="salary" placeholder="Например: 130 000 ₽">
+            </div>
+            <div>
+              <label>Комментарий</label>
+              <input type="text" name="note" placeholder="Например: повышение / индексация">
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn primary small" type="submit">Сохранить запись</button>
+          </div>
+        </form>
+      </div>
+    </details>
+  </div>
+
+  {% if history %}
+    {% for h in history %}
+      <div class="semester-block" style="margin-bottom:12px">
+        <div class="semester-title">
+          <strong>{{ (h.change_date or '')[:10] }}</strong>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <details class="inline-edit">
+              <summary class="btn small" style="cursor:pointer">Правка</summary>
+              <div class="card" style="margin-top:8px;padding:12px">
+                <form method="post" action="{{ url_for('history_edit', hid=h.id) }}">
+                  <div class="form-grid">
+                    <div>
+                      <label>Дата</label>
+                      <input type="date" name="change_date" value="{{ h.change_date }}" required>
+                    </div>
+                    <div>
+                      <label>Должность</label>
+                      <select name="position_id">
+                        <option value="">— не менялась —</option>
+                        {% for p in positions %}
+                          <option value="{{ p.id }}" {{ 'selected' if h.position_id == p.id else '' }}>{{ p.name }}</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div>
+                      <label>Зарплата</label>
+                      <input type="text" name="salary" value="{{ h.salary }}">
+                    </div>
+                    <div>
+                      <label>Комментарий</label>
+                      <input type="text" name="note" value="{{ h.note }}">
+                    </div>
+                  </div>
+                  <div class="btn-row">
+                    <button class="btn primary small" type="submit">Сохранить</button>
+                  </div>
+                </form>
+              </div>
+            </details>
+            <form method="post" action="{{ url_for('history_delete', hid=h.id) }}"
+                  onsubmit="return confirm('Удалить запись истории?')">
+              <button class="btn small danger" type="submit">Удалить</button>
+            </form>
+          </div>
+        </div>
+        <div style="color:var(--text)">
+          {% if h.position_name %}<span class="tag tag-1H">{{ h.position_name }}</span>{% endif %}
+          {% if h.salary %} <strong style="margin-left:4px">{{ h.salary }}</strong>{% endif %}
+        </div>
+        {% if h.note %}<div class="sub" style="margin-top:4px">{{ h.note }}</div>{% endif %}
+      </div>
+    {% endfor %}
+  {% else %}
+    <div class="empty">Пока нет записей об изменениях должности и зарплаты. Добавьте первую — увидите историю по датам.</div>
+  {% endif %}
+  </div>
+</details>
+
+<!-- Случайные заметки о сотруднике -->
+<details class="card accordion" data-acc="notes" open>
+  <summary class="acc-summary"><span class="acc-title">Заметки</span>
+    <span class="acc-toggle">свернуть/развернуть</span>
+  </summary>
+  <div class="acc-body">
+  <form method="post" action="{{ url_for('employee_notes', eid=emp.id) }}">
+    <div class="toolbar" style="margin-bottom:8px">
+      <div class="spacer"></div>
+      <button class="btn small primary" type="submit">Сохранить</button>
+    </div>
+    <textarea name="notes" style="min-height:110px"
+              placeholder="Случайные заметки о сотруднике: черты характера, пожелания по развитию, подвижки, что угодно вне привязки к полугодию.">{{ emp.notes or '' }}</textarea>
+  </form>
+  </div>
+</details>
+
+<!-- Выбор года -->
+<div class="toolbar">
+  <div class="year-tabs">
+    {% if years and year not in years %}
+      <a class="year-tab active"
+         href="{{ url_for('employee_view', eid=emp.id, year=year) }}">{{ year }}</a>
+    {% endif %}
+    {% for y in years %}
+      <a class="year-tab {{ 'active' if y == year else '' }}"
+         href="{{ url_for('employee_view', eid=emp.id, year=y) }}">{{ y }}</a>
+    {% endfor %}
+  </div>
+  <div class="spacer"></div>
+</div>
+
+<!-- Полугодовые записи -->
+<details class="card accordion" data-acc="semesters">
+  <summary class="acc-summary"><span class="acc-title">Полугодовые записи · {{ year }} год</span>
+    <span class="acc-toggle">свернуть/развернуть</span>
+  </summary>
+  <div class="acc-body">
+  <div class="semester-blocks">
+    {% for code, label in semesters.items() %}
+      {% set rec = records.get(code) %}
+      <div class="semester-block">
+        <div class="semester-title">
+          <h3>{{ label }}</h3>
+          {% if rec %}
+            <span class="updated">обновлено {{ (rec.updated_at or '')[:10] }}</span>
+          {% else %}
+            <span class="updated">нет записи</span>
+          {% endif %}
+        </div>
+        <form method="post" action="{{ url_for('record_save', eid=emp.id) }}">
+          <input type="hidden" name="year" value="{{ year }}">
+          <input type="hidden" name="semester" value="{{ code }}">
+
+          <div class="field-label">Цели сотрудника</div>
+          <textarea name="goals_employee" placeholder="Какие цели ставил инженер на это полугодие">{{ (rec.goals_employee if rec else '') }}</textarea>
+
+          <div class="field-label">Мои предложения</div>
+          <textarea name="proposals_manager" placeholder="Что я предложил / поставил как руководитель">{{ (rec.proposals_manager if rec else '') }}</textarea>
+
+          <div class="field-label">Пожелания сотрудника</div>
+          <textarea name="wishes_employee" placeholder="Его пожелания, запросы, ожидания">{{ (rec.wishes_employee if rec else '') }}</textarea>
+
+          <div class="field-label">Мои комментарии</div>
+          <textarea name="comments" placeholder="Комментарии, наблюдения, оценка">{{ (rec.comments if rec else '') }}</textarea>
+
+          <div class="btn-row">
+            <button class="btn primary" type="submit">Сохранить</button>
+          </div>
+        </form>
+      </div>
+    {% endfor %}
+  </div>
+  </div>
+</details>
+
+<!-- Встречи 1-на-1 -->
+<details class="card accordion" data-acc="meetings">
+  <summary class="acc-summary"><span class="acc-title">Встречи 1-на-1</span>
+    <span class="acc-count">{% if meetings %}· {{ meetings|length }}{% endif %}</span>
+    <span class="acc-toggle">свернуть/развернуть</span>
+  </summary>
+  <div class="acc-body">
+  <div class="toolbar" style="margin-bottom:8px">
+    <div class="spacer"></div>
+    <a class="btn small" href="{{ url_for('meeting_new', eid=emp.id) }}">+ Новая встреча</a>
+  </div>
+
+  {% if meetings %}
+    {% for mt in meetings %}
+      <div class="semester-block" style="margin-bottom:12px">
+        <div class="semester-title">
+          <strong>{{ (mt.date or '')[:10] }}</strong>
+          <div style="display:flex;gap:8px">
+            <a class="btn small" href="{{ url_for('meeting_edit', mid=mt.id) }}">Правка</a>
+            <form method="post" action="{{ url_for('meeting_delete', mid=mt.id) }}"
+                  onsubmit="return confirm('Удалить встречу?')">
+              <button class="btn small danger" type="submit">Удалить</button>
+            </form>
+          </div>
+        </div>
+        <div style="white-space:pre-wrap">{{ mt.summary }}</div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <div class="empty">Встреч пока не было. Добавьте первую, чтобы фиксировать итоги 1-на-1.</div>
+  {% endif %}
+  </div>
+</details>
+
+<script>
+/* Сохраняем развёрнутость спойлеров в localStorage */
+(function () {
+  var KEY = 'teambook-acc';
+  var stored = {};
+  try { stored = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) {}
+  document.querySelectorAll('details.accordion').forEach(function (d) {
+    var k = d.getAttribute('data-acc') || d.querySelector('.acc-title').textContent.trim();
+    // по умолчанию: ничего не задано/не сохранено — используем атрибут open
+    if (stored.hasOwnProperty(k)) {
+      d.open = stored[k];
+    }
+    d.addEventListener('toggle', function () {
+      stored[k] = d.open;
+      try { localStorage.setItem(KEY, JSON.stringify(stored)); } catch (e) {}
+    });
+  });
+})();
+</script>
+
+{% endblock %}

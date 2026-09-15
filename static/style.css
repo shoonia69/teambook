@@ -1,0 +1,178 @@
+/* TeamBook — тёмная, аккуратная тема */
+:root {
+  --bg: #0f1420;
+  --panel: #171e30;
+  --panel2: #1e2740;
+  --border: #2a3552;
+  --text: #e6ebf5;
+  --muted: #93a0bd;
+  --accent: #4f8cff;
+  --accent2: #38d9a9;
+  --danger: #ff6b6b;
+  --radius: 10px;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ---------- topbar ---------- */
+.topbar {
+  display: flex; align-items: center; gap: 24px;
+  padding: 0 20px; height: 58px;
+  background: var(--panel); border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 10;
+}
+.brand a { display: flex; align-items: center; gap: 8px; color: var(--text); text-decoration: none; }
+.logo {
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: #04121f; font-weight: 700; border-radius: 7px;
+  padding: 3px 9px; font-size: 15px;
+}
+.brand-name { font-weight: 600; font-size: 17px; }
+.nav { display: flex; gap: 18px; flex: 1; }
+.nav a { color: var(--muted); font-weight: 500; }
+.nav a:hover { color: var(--text); text-decoration: none; }
+.user-area .logout { color: var(--muted); }
+.user-area .logout:hover { color: var(--danger); text-decoration: none; }
+
+/* ---------- layout ---------- */
+.container { max-width: 1100px; margin: 24px auto; padding: 0 20px; }
+.footer { text-align: center; color: var(--muted); font-size: 13px; padding: 30px 0 24px; }
+
+.flashes { margin-bottom: 18px; }
+.flash { padding: 10px 14px; border-radius: var(--radius); margin-bottom: 8px; border: 1px solid; }
+.flash-ok { background: rgba(56, 217, 169, .12); border-color: var(--accent2); color: var(--accent2); }
+.flash-error { background: rgba(255, 107, 107, .12); border-color: var(--danger); color: var(--danger); }
+
+/* ---------- cards ---------- */
+.card {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 20px; margin-bottom: 18px;
+}
+.card h2, .card h3 { margin-top: 0; }
+.panel-title { font-size: 18px; font-weight: 600; margin-bottom: 14px; }
+
+.empty { color: var(--muted); font-style: italic; padding: 8px 0; }
+
+/* ---------- toolbar ---------- */
+.toolbar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
+.toolbar .spacer { flex: 1; }
+
+.year-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.year-tab {
+  padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border);
+  color: var(--muted); cursor: pointer; background: var(--panel2);
+}
+.year-tab.active { background: var(--accent); border-color: var(--accent); color: #04121f; font-weight: 600; }
+.year-tab:hover { text-decoration: none; color: var(--text); }
+
+/* ---------- filters ---------- */
+.filter-panel { padding: 14px 20px; }
+.filter-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.filter-row + .filter-row { margin-top: 10px; }
+.filter-label { color: var(--muted); font-size: 13px; font-weight: 600; min-width: 64px; }
+.chip {
+  padding: 4px 13px; border-radius: 16px; border: 1px solid var(--border);
+  background: var(--panel2); color: var(--muted); font-size: 13px; cursor: pointer;
+}
+.chip:hover { text-decoration: none; color: var(--text); border-color: var(--accent); }
+.chip.active { background: var(--accent); border-color: var(--accent); color: #04121f; font-weight: 600; }
+
+/* ---------- table ---------- */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .4px; }
+tr:hover td { background: rgba(79, 140, 255, .05); }
+td.name { font-weight: 600; }
+td .sub { color: var(--muted); font-size: 13px; }
+a.view { color: var(--accent2); font-weight: 500; }
+.tag { display: inline-block; padding: 2px 9px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+.tag-1H { background: rgba(79, 140, 255, .15); color: var(--accent); }
+.tag-2H { background: rgba(56, 217, 169, .15); color: var(--accent2); }
+
+/* ---------- forms ---------- */
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.form-grid .full { grid-column: 1 / -1; }
+label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+input[type=text], input[type=password], input[type=number], input[type=date],
+select, textarea {
+  width: 100%; padding: 10px 12px; background: var(--panel2);
+  border: 1px solid var(--border); border-radius: 8px; color: var(--text);
+  font-family: inherit; font-size: 15px;
+}
+textarea { resize: vertical; min-height: 90px; }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+
+.btn {
+  display: inline-block; padding: 9px 18px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--panel2); color: var(--text); cursor: pointer; font-size: 15px;
+  text-decoration: none; line-height: 1.4;
+}
+.btn:hover { text-decoration: none; border-color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #04121f; font-weight: 600; }
+.btn.primary:hover { filter: brightness(1.1); }
+.btn.danger { color: var(--danger); border-color: rgba(255,107,107,.4); }
+.btn.danger:hover { background: rgba(255,107,107,.1); }
+.btn.small { padding: 5px 11px; font-size: 13px; }
+.btn-row { display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+
+/* ---------- catalogs ---------- */
+.cat-row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
+.cat-edit { display: flex; gap: 8px; flex: 1; }
+.cat-add { display: flex; gap: 8px; margin-top: 12px; }
+.cat-add input { flex: 1; }
+
+/* ---------- records block ---------- */
+.semester-blocks { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.semester-block { background: var(--panel2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+.semester-block h3 { margin: 0 0 4px; font-size: 16px; }
+.semester-title { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
+.semester-block .updated { color: var(--muted); font-size: 12px; }
+.field-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; margin: 12px 0 4px; }
+.field-label:first-child { margin-top: 0; }
+
+/* ---------- details/summary (инлайн-правка) ---------- */
+details.inline-add, details.inline-edit { display: inline-block; }
+details.inline-add summary, details.inline-edit summary { list-style: none; cursor: pointer; }
+details.inline-add summary::-webkit-details-marker,
+details.inline-edit summary::-webkit-details-marker { display: none; }
+details.inline-add summary:hover, details.inline-edit summary:hover { border-color: var(--accent); color: var(--text); }
+
+/* ---------- accordion (спойлеры блоков) ---------- */
+details.accordion { padding: 0; overflow: hidden; }
+details.accordion > summary {
+  list-style: none; cursor: pointer; padding: 14px 20px;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+details.accordion > summary::-webkit-details-marker { display: none; }
+details.accordion > summary:hover { background: rgba(79,140,255,.05); }
+details.accordion[open] > summary { border-bottom: 1px solid var(--border); background: rgba(79,140,255,.06); }
+.acc-title { font-weight: 600; font-size: 16px; }
+.acc-count { color: var(--muted); font-size: 13px; }
+.acc-toggle {
+  margin-left: auto; color: var(--muted); font-size: 12px; opacity: .8;
+  font-weight: 400; text-transform: none; letter-spacing: 0;
+}
+details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
+.acc-body { padding: 16px 20px; }
+
+/* ---------- login ---------- */
+.login-wrap { max-width: 380px; margin: 10vh auto; }
+.login-card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 32px; }
+.login-card h1 { margin: 0 0 6px; font-size: 22px; }
+.login-card p.sub { color: var(--muted); margin: 0 0 20px; }
+
+@media (max-width: 760px) {
+  .form-grid, .semester-blocks { grid-template-columns: 1fr; }
+}

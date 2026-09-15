@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}TeamBook{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <a href="{{ url_for('index') }}"><span class="logo">TB</span> <span class="brand-name">TeamBook</span></a>
+  </div>
+  <nav class="nav">
+    <a href="{{ url_for('index') }}">Сотрудники</a>
+    <a href="{{ url_for('catalogs') }}">Справочники</a>
+    <a href="{{ url_for('employee_new') }}">+ Добавить сотрудника</a>
+  </nav>
+  <div class="user-area">
+    {% if session.get('authed') %}
+      <a class="logout" href="{{ url_for('logout') }}">Выйти</a>
+    {% endif %}
+  </div>
+</header>
+
+<main class="container">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="flashes">
+        {% for cat, msg in messages %}
+          <div class="flash flash-{{ cat }}">{{ msg }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</main>
+
+<footer class="footer">
+  TeamBook · блокнот руководителя · данные хранятся на вашем сервере
+</footer>
+</body>
+</html>

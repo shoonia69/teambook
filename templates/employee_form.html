@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} · TeamBook{% endblock %}
+{% block content %}
+<div class="card" style="max-width:700px">
+  <h2>{{ title }}</h2>
+  <form method="post">
+    <div class="form-grid">
+      <div class="full">
+        <label>ФИО сотрудника *</label>
+        <input type="text" name="name" value="{{ emp.name or '' }}" required>
+      </div>
+      <div>
+        <label>Должность</label>
+        <select name="position_id">
+          <option value="">— не выбрано —</option>
+          {% for p in positions %}
+            <option value="{{ p.id }}" {{ 'selected' if emp.position_id == p.id else '' }}>{{ p.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>Отдел</label>
+        <select name="department_id">
+          <option value="">— не выбрано —</option>
+          {% for d in departments %}
+            <option value="{{ d.id }}" {{ 'selected' if emp.department_id == d.id else '' }}>{{ d.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="full">
+        <label>Зарплата</label>
+        <input type="text" name="salary" value="{{ emp.salary or '' }}"
+               placeholder="Например: 120 000 ₽ / 150 000 ₽">
+      </div>
+      <div class="full">
+        <label>Дата приёма на работу (пусто = не указана)</label>
+        <input type="date" name="hire_date" value="{{ emp.hire_date or '' }}" style="max-width:220px">
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn primary" type="submit">Сохранить</button>
+      <a class="btn" href="{{ url_for('employee_view', eid=emp.id) if emp.id else url_for('index') }}">Отмена</a>
+      <span class="sub" style="margin-left:auto;align-self:center">
+        Нужной должности или отдела нет? <a href="{{ url_for('catalogs') }}">Создать в справочнике</a>
+      </span>
+    </div>
+  </form>
+</div>
+{% endblock %}

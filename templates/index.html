@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Сотрудники {{ year }} · TeamBook{% endblock %}
+{% block content %}
+
+<div class="toolbar">
+  <div class="year-tabs">
+    {% for y in years %}
+      <a class="year-tab {{ 'active' if y == year else '' }}"
+         href="{{ url_for('index', year=y, department=sel_department, position=sel_position) }}">{{ y }}</a>
+    {% endfor %}
+    {% if not years %}
+      <span class="year-tab active">{{ year }}</span>
+    {% endif %}
+  </div>
+  <div class="spacer"></div>
+  <a class="btn primary" href="{{ url_for('employee_new') }}">+ Добавить сотрудника</a>
+</div>
+
+<!-- Фильтры: отдел (вкладки) и должность (список) -->
+<div class="card filter-panel">
+  <div class="filter-row">
+    <span class="filter-label">Отдел:</span>
+    <a class="chips chip {{ 'active' if not sel_department else '' }}"
+       href="{{ url_for('index', year=year, position=sel_position) }}">Все</a>
+    {% for d in departments %}
+      <a class="chips chip {{ 'active' if d == sel_department else '' }}"
+         href="{{ url_for('index', year=year, department=d, position=sel_position) }}">{{ d }}</a>
+    {% endfor %}
+  </div>
+  <div class="filter-row">
+    <label class="filter-label" for="pos-filter" style="margin:0">Должность:</label>
+    <select id="pos-filter" name="position" onchange="location.href=this.value" style="max-width:280px">
+      <option value="{{ url_for('index', year=year, department=sel_department) }}">— все должности —</option>
+      {% for p in positions %}
+        <option value="{{ url_for('index', year=year, department=sel_department, position=p) }}"
+                {{ 'selected' if p == sel_position else '' }}>{{ p }}</option>
+      {% endfor %}
+    </select>
+    {% if sel_department or sel_position %}
+      <a class="btn small" href="{{ url_for('index', year=year) }}">✕ Сбросить фильтры</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="panel-title">Сотрудники · {{ year }} год
+    {% if sel_department or sel_position %}
+      <span class="sub" style="font-size:13px">(отфильтровано)</span>
+    {% endif %}
+  </div>
+  {% if employees %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Сотрудник</th>
+          <th>Отдел</th>
+          <th>Должность</th>
+          <th>Зарплата</th>
+          <th>I полугодие</th>
+          <th>II полугодие</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in employees %}
+        <tr>
+          <td class="name">{{ e.name }}</td>
+          <td>{{ e.department or '—' }}</td>
+          <td><span class="sub">{{ e.position or '—' }}</span></td>
+          <td>{{ e.salary or '—' }}</td>
+          <td>
+            {% if e.records.get('1H') %}
+              <span class="tag tag-1H">записано</span>
+            {% else %}
+              <span class="sub">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if e.records.get('2H') %}
+              <span class="tag tag-2H">записано</span>
+            {% else %}
+              <span class="sub">—</span>
+            {% endif %}
+          </td>
+          <td><a class="view" href="{{ url_for('employee_view', eid=e.id, year=year) }}">Открыть →</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <div class="empty">Нет сотрудников по выбранным фильтрам.</div>
+  {% endif %}
+</div>
+
+{% endblock %}

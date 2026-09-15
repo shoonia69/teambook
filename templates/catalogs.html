@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Справочники · TeamBook{% endblock %}
+{% block content %}
+
+<div class="toolbar">
+  <h2 style="margin:0">Справочники</h2>
+  <div class="spacer"></div>
+  <a class="btn" href="{{ url_for('index') }}">← К сотрудникам</a>
+</div>
+
+<div class="form-grid">
+  <!-- Должности -->
+  <div class="card">
+    <div class="panel-title">Должности</div>
+    {% for p in positions %}
+      <div class="cat-row">
+        <form method="post" action="{{ url_for('catalog_rename', kind='position', cid=p.id) }}"
+              class="cat-edit">
+          <input type="text" name="name" value="{{ p.name }}">
+          <button class="btn small" type="submit" title="Переименовать">💾</button>
+        </form>
+        <form method="post" action="{{ url_for('catalog_delete', kind='position', cid=p.id) }}"
+              onsubmit="return confirm('Удалить должность «{{ p.name }}»? У сотрудников она снимется.')">
+          <button class="btn small danger" type="submit" title="Удалить">✕</button>
+        </form>
+      </div>
+    {% else %}
+      <div class="empty">Должностей пока нет</div>
+    {% endfor %}
+
+    <form method="post" action="{{ url_for('catalog_add', kind='position') }}" class="cat-add">
+      <input type="text" name="name" placeholder="Новая должность..." required>
+      <button class="btn primary small" type="submit">+ Добавить</button>
+    </form>
+  </div>
+
+  <!-- Отделы -->
+  <div class="card">
+    <div class="panel-title">Отделы</div>
+    {% for d in departments %}
+      <div class="cat-row">
+        <form method="post" action="{{ url_for('catalog_rename', kind='department', cid=d.id) }}"
+              class="cat-edit">
+          <input type="text" name="name" value="{{ d.name }}">
+          <button class="btn small" type="submit" title="Переименовать">💾</button>
+        </form>
+        <form method="post" action="{{ url_for('catalog_delete', kind='department', cid=d.id) }}"
+              onsubmit="return confirm('Удалить отдел «{{ d.name }}»? У сотрудников он снимется.')">
+          <button class="btn small danger" type="submit" title="Удалить">✕</button>
+        </form>
+      </div>
+    {% else %}
+      <div class="empty">Отделов пока нет</div>
+    {% endfor %}
+
+    <form method="post" action="{{ url_for('catalog_add', kind='department') }}" class="cat-add">
+      <input type="text" name="name" placeholder="Новый отдел..." required>
+      <button class="btn primary small" type="submit">+ Добавить</button>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
