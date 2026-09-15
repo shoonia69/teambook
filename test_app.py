@@ -98,6 +98,7 @@ c.post(f"/employee/{eid}/record", data={
     "proposals_manager": "Дать проект X",
     "wishes_employee": "Хочет повышение",
     "comments": "Хорошая динамика",
+    "colleagues_feedback": "Коллеги высоко ценят",
 }, follow_redirects=True)
 r = c.get(f"/employee/{eid}?year=2026")
 body = r.get_data(as_text=True)
@@ -105,6 +106,7 @@ check("запись цели", "Освоить Orion soft" in body)
 check("запись предложения", "Дать проект X" in body)
 check("запись пожелания", "Хочет повышение" in body)
 check("запись комментария", "Хорошая динамика" in body)
+check("запись отзывов коллег", "Коллеги высоко ценят" in body)
 
 # upsert
 with appmod.app.app_context():
@@ -189,9 +191,23 @@ cnt = len(dbq("SELECT * FROM employee_history WHERE employee_id=?", (eid,)))
 c.post(f"/history/{hid}/delete")
 check("история удаляется", len(dbq("SELECT * FROM employee_history WHERE employee_id=?", (eid,))) == cnt - 1)
 
-# валидация: история без даты отклоняется
+# --- валидация: история без даты отклоняется ---
 c.post(f"/employee/{eid}/history/add", data={"change_date": "", "position_id": "", "salary": "", "note": ""})
 check("история без даты отклонена", len(dbq(f"SELECT * FROM employee_history WHERE employee_id={eid} AND change_date=''")) == 0)
+
+# --- создание года вручную (каркас) ---
+c.post(f"/employee/{eid}/year/new", data={"year": "2027"}, follow_redirects=True)
+cnt27 = dbq("SELECT COUNT(*) c FROM year_records WHERE employee_id=? AND year=2027", (eid,))[0]["c"]
+check("создание года даёт 2 полугодовые записи", cnt27 == 2)
+body = c.get(f"/employee/{eid}?year=2027").get_data(as_text=True)
+check("год 2027 виден в карточке", "2027" in body)
+# в новом году два блока полугодий видны (записи пустые)
+check("оба полугодия нового года отображаются", "I полугодие" in body and "II полугодие" in body)
+
+# --- кликабельное имя в списке ---
+body = c.get("/").get_data(as_text=True)
+check("имя сотрудника — кликабельная ссылка", f'class="emp-link" href="/employee/{eid}"' in body)
+check("ссылки 'Открыть →' больше нет", "Открыть →" not in body)
 
 # второй сотрудник в другом отделе и другой должности
 c.post("/catalog/position/add", data={"name": "Стажёр"})

@@ -93,6 +93,7 @@ CREATE TABLE IF NOT EXISTS year_records (
     proposals_manager TEXT DEFAULT '',
     wishes_employee   TEXT DEFAULT '',
     comments          TEXT DEFAULT '',
+    colleagues_feedback TEXT DEFAULT '',
     updated_at        TEXT DEFAULT (datetime('now')),
     UNIQUE(employee_id, year, semester)
 );
@@ -129,6 +130,12 @@ def init_db():
     if "hire_date" not in cols:
         db.execute("ALTER TABLE employees ADD COLUMN hire_date TEXT DEFAULT ''")
         print("[TeamBook] Миграция employees: добавлена колонка hire_date")
+
+    # Миграция: добавление колонки colleagues_feedback (отзывы коллег)
+    cols = {r[1] for r in db.execute("PRAGMA table_info(year_records)").fetchall()}
+    if "colleagues_feedback" not in cols:
+        db.execute("ALTER TABLE year_records ADD COLUMN colleagues_feedback TEXT DEFAULT ''")
+        print("[TeamBook] Миграция year_records: добавлена колонка colleagues_feedback")
 
     # Починка FK-ссылок, сломанных переименованием employees (см. _migrate_employees).
     # SQLite при ALTER TABLE RENAME переписывает ссылки на employees в дочерние
@@ -260,16 +267,6 @@ def login_required(f):
 @app.route("/")
 def index():
     db = get_db()
-    years = [r["year"] for r in db.execute(
-        "SELECT DISTINCT year FROM year_records ORDER BY year DESC").fetchall()]
-
-    all_years = list(years)
-    if not all_years:
-        all_years = [datetime.now().year]
-
-    year = request.args.get("year", type=int, default=None)
-    if year is None:
-        year = all_years[0] if all_years else datetime.now().year
 
     # Фильтры по отделу и должности + поиск по имени/фамилии
     department = request.args.get("department", "").strip()
@@ -286,7 +283,7 @@ def index():
         "ORDER BY p.name").fetchall()]
 
     where = ["e.active = 1"]
-    params = [year]
+    params = []
     if department:
         where.append("d.name = ?")
         params.append(department)
@@ -296,49 +293,31 @@ def index():
 
     rows = db.execute(
         f"""
-        SELECT e.*, p.name AS position, d.name AS department,
-               yr.semester, yr.goals_employee, yr.proposals_manager,
-               yr.wishes_employee, yr.comments, yr.updated_at
+        SELECT e.*, p.name AS position, d.name AS department
         FROM employees e
         LEFT JOIN positions p ON p.id = e.position_id
         LEFT JOIN departments d ON d.id = e.department_id
-        LEFT JOIN year_records yr
-               ON yr.employee_id = e.id AND yr.year = ?
         WHERE {' AND '.join(where)}
         ORDER BY d.name, e.name
         """,
         tuple(params),
     ).fetchall()
 
-    employees = {}
-    for r in rows:
-        if r["id"] not in employees:
-            employees[r["id"]] = {
-                "id": r["id"], "name": r["name"], "position": r["position"],
-                "department": r["department"], "salary": r["salary"],
-                "records": {},
-            }
-        if r["semester"]:
-            employees[r["id"]]["records"][r["semester"]] = {
-                "goals_employee": r["goals_employee"],
-                "proposals_manager": r["proposals_manager"],
-                "wishes_employee": r["wishes_employee"],
-                "comments": r["comments"],
-                "updated_at": r["updated_at"],
-            }
+    employees = [
+        {"id": r["id"], "name": r["name"], "position": r["position"],
+         "department": r["department"], "salary": r["salary"]}
+        for r in rows
+    ]
 
     # Поиск по имени/фамилии (регистронезависимо, поддержка кириллицы)
     if q:
         ql = q.lower().replace("ё", "е")
-        employees = {eid: e for eid, e in employees.items()
-                     if ql in e["name"].lower().replace("ё", "е")}
+        employees = [e for e in employees
+                     if ql in e["name"].lower().replace("ё", "е")]
 
     return render_template(
         "index.html",
-        employees=list(employees.values()),
-        years=all_years,
-        year=year,
-        semesters=SEMESTERS,
+        employees=employees,
         departments=all_departments,
         positions=all_positions,
         sel_department=department,
@@ -631,13 +610,14 @@ def record_save(eid):
     db.execute(
         """
         INSERT INTO year_records (employee_id, year, semester, goals_employee,
-            proposals_manager, wishes_employee, comments, updated_at)
-        VALUES (?,?,?,?,?,?,?, datetime('now'))
+            proposals_manager, wishes_employee, comments, colleagues_feedback, updated_at)
+        VALUES (?,?,?,?,?,?,?,?, datetime('now'))
         ON CONFLICT(employee_id, year, semester) DO UPDATE SET
             goals_employee=excluded.goals_employee,
             proposals_manager=excluded.proposals_manager,
             wishes_employee=excluded.wishes_employee,
             comments=excluded.comments,
+            colleagues_feedback=excluded.colleagues_feedback,
             updated_at=datetime('now')
         """,
         (
@@ -646,6 +626,7 @@ def record_save(eid):
             request.form.get("proposals_manager", ""),
             request.form.get("wishes_employee", ""),
             request.form.get("comments", ""),
+            request.form.get("colleagues_feedback", ""),
         ),
     )
     db.commit()
@@ -664,6 +645,27 @@ def record_delete(rid):
         db.commit()
         return redirect(url_for("employee_view", eid=eid, year=year))
     abort(404)
+
+
+@app.route("/employee/<int:eid>/year/new", methods=["POST"])
+@login_required
+def employee_year_new(eid):
+    """Создать каркас года для сотрудника: две пустые полугодовые записи (1H, 2H)."""
+    db = get_db()
+    try:
+        year = int(request.form.get("year", "").strip())
+    except ValueError:
+        flash("Укажите корректный год", "error")
+        return redirect(url_for("employee_view", eid=eid))
+    for sem in ("1H", "2H"):
+        db.execute(
+            "INSERT OR IGNORE INTO year_records "
+            "(employee_id, year, semester, updated_at) VALUES (?,?,?, datetime('now'))",
+            (eid, year, sem),
+        )
+    db.commit()
+    flash(f"Год {year} создан для сотрудника", "ok")
+    return redirect(url_for("employee_view", eid=eid, year=year))
 
 
 # --------------------------------------------------------------------------- #

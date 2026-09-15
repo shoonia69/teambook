@@ -95,6 +95,8 @@ th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--bo
 th { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .4px; }
 tr:hover td { background: rgba(79, 140, 255, .05); }
 td.name { font-weight: 600; }
+a.emp-link { color: var(--text); font-weight: 600; }
+a.emp-link:hover { color: var(--accent); text-decoration: underline; }
 td .sub { color: var(--muted); font-size: 13px; }
 a.view { color: var(--accent2); font-weight: 500; }
 .tag { display: inline-block; padding: 2px 9px; border-radius: 12px; font-size: 12px; font-weight: 600; }
