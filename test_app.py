@@ -204,6 +204,15 @@ check("год 2027 виден в карточке", "2027" in body)
 # в новом году два блока полугодий видны (записи пустые)
 check("оба полугодия нового года отображаются", "I полугодие" in body and "II полугодие" in body)
 
+# --- удаление года ---
+body = c.get(f"/employee/{eid}?year=2027").get_data(as_text=True)
+check("кнопка удаления года видна", f"Удалить год 2027" in body)
+c.post(f"/employee/{eid}/year/delete", data={"year": "2027"}, follow_redirects=True)
+cnt27 = dbq("SELECT COUNT(*) c FROM year_records WHERE employee_id=? AND year=2027", (eid,))[0]["c"]
+check("года 2027 нет после удаления", cnt27 == 0)
+body = c.get(f"/employee/{eid}?year=2026").get_data(as_text=True)
+check("2026 год сохранился после удаления 2027", "Цели сотрудника" in body)
+
 # --- кликабельное имя в списке ---
 body = c.get("/").get_data(as_text=True)
 check("имя сотрудника — кликабельная ссылка", f'class="emp-link" href="/employee/{eid}"' in body)

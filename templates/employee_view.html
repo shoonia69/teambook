@@ -158,6 +158,13 @@
            value="{{ (year|string) }}" style="max-width:100px" required>
     <button class="btn small primary" type="submit">Создать</button>
   </form>
+  {% if year in years %}
+  <form method="post" action="{{ url_for('employee_year_delete', eid=emp.id) }}" style="margin:0"
+        onsubmit="return confirm('Удалить {{ year }} год и все записи за него? Это действие необратимо.')">
+    <input type="hidden" name="year" value="{{ year }}">
+    <button class="btn small danger" type="submit">Удалить год {{ year }}</button>
+  </form>
+  {% endif %}
 </div>
 
 <!-- Полугодовые записи -->

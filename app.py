@@ -668,6 +668,28 @@ def employee_year_new(eid):
     return redirect(url_for("employee_view", eid=eid, year=year))
 
 
+@app.route("/employee/<int:eid>/year/delete", methods=["POST"])
+@login_required
+def employee_year_delete(eid):
+    """Удалить год целиком: все полугодовые записи (1H, 2H) сотрудника за год."""
+    db = get_db()
+    try:
+        year = int(request.form.get("year", "").strip())
+    except ValueError:
+        flash("Укажите корректный год", "error")
+        return redirect(url_for("employee_view", eid=eid))
+    deleted = db.execute(
+        "DELETE FROM year_records WHERE employee_id=? AND year=?",
+        (eid, year),
+    ).rowcount
+    db.commit()
+    if deleted:
+        flash(f"Год {year} и его записи удалены", "ok")
+    else:
+        flash(f"Года {year} у сотрудника не было", "error")
+    return redirect(url_for("employee_view", eid=eid))
+
+
 # --------------------------------------------------------------------------- #
 # Встречи 1-на-1
 # --------------------------------------------------------------------------- #
