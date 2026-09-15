@@ -144,14 +144,10 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .field-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; margin: 12px 0 4px; }
 .field-label:first-child { margin-top: 0; }
 
-/* Горизонтальное расположение полей полугодия: сетка в 3 колонки */
-.semester-fields {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 14px;
-}
+/* Поля полугодия — сверху вниз (один столбик) */
+.semester-fields { display: flex; flex-direction: column; gap: 6px; }
 .semester-fields .sfield { display: flex; flex-direction: column; }
-.semester-fields textarea { flex: 1; min-height: 110px; }
+.semester-fields textarea { min-height: 90px; }
 
 /* ---------- details/summary (инлайн-правка) ---------- */
 details.inline-add, details.inline-edit { display: inline-block; }
@@ -186,5 +182,4 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
 
 @media (max-width: 760px) {
   .form-grid, .semester-blocks { grid-template-columns: 1fr; }
-  .semester-fields { grid-template-columns: 1fr; }
 }
