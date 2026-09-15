@@ -218,6 +218,42 @@ body = c.get("/").get_data(as_text=True)
 check("имя сотрудника — кликабельная ссылка", f'class="emp-link" href="/employee/{eid}"' in body)
 check("ссылки 'Открыть →' больше нет", "Открыть →" not in body)
 
+# --- теги: справочник ---
+c.post("/catalog/tag/add", data={"name": "Наставник"})
+c.post("/catalog/tag/add", data={"name": "Развитие"})
+t_nast = dbq("SELECT * FROM tags WHERE name='Наставник'")[0]
+t_razv = dbq("SELECT * FROM tags WHERE name='Развитие'")[0]
+check("тег создан с цветом", t_nast["color"] and t_nast["color"].startswith("#"))
+
+# --- теги: привязка к сотруднику через редактирование ---
+emp_row = dbq("SELECT * FROM employees WHERE id=?", (eid,))[0]
+c.post(f"/employee/{eid}/edit", data={
+    "name": "Иванов Иван",
+    "position_id": str(emp_row["position_id"] or ""),
+    "department_id": str(emp_row["department_id"] or ""),
+    "salary": emp_row["salary"] or "",
+    "tag_ids": [str(t_nast["id"]), str(t_razv["id"])],
+}, follow_redirects=True)
+taglinks = dbq("SELECT tag_id FROM employee_tags WHERE employee_id=?", (eid,))
+check("2 тега привязаны к сотруднику", len(taglinks) == 2)
+body = c.get(f"/employee/{eid}").get_data(as_text=True)
+check("теги видны в карточке", "Наставник" in body and "Развитие" in body)
+body = c.get("/").get_data(as_text=True)
+check("теги видны в списке", "tag-chip" in body and "Иванов Иван" in body)
+
+# --- теги: снятие при редактировании и удаление тега из справочника ---
+emp_row = dbq("SELECT * FROM employees WHERE id=?", (eid,))[0]
+c.post(f"/employee/{eid}/edit", data={
+    "name": "Иванов Иван",
+    "position_id": str(emp_row["position_id"] or ""),
+    "department_id": str(emp_row["department_id"] or ""),
+    "salary": emp_row["salary"] or "",
+}, follow_redirects=True)
+taglinks = dbq("SELECT tag_id FROM employee_tags WHERE employee_id=?", (eid,))
+check("теги сняты (пустой выбор)", len(taglinks) == 0)
+c.post(f"/catalog/tag/{t_nast['id']}/delete")
+check("тег удалён из справочника", len(dbq("SELECT * FROM tags WHERE id=?", (t_nast["id"],))) == 0)
+
 # --- сотрудник без годов: нет неделимого 2026 по умолчанию ---
 c.post("/employee/new", data={
     "name": "Сидоров БезГодов", "position_id": "", "department_id": "", "salary": ""

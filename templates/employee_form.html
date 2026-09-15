@@ -36,6 +36,21 @@
         <label>Дата приёма на работу (пусто = не указана)</label>
         <input type="date" name="hire_date" value="{{ emp.hire_date or '' }}" style="max-width:220px">
       </div>
+      <div class="full">
+        <label>Теги</label>
+        <div class="tag-select">
+          {% for t in tags %}
+            <label class="tag-option">
+              <input type="checkbox" name="tag_ids" value="{{ t.id }}"
+                     {{ 'checked' if t.id in employee_tag_ids else '' }}>
+              <span class="tag-chip-mini" style="--c:{{ t.color }}">{{ t.name }}</span>
+            </label>
+          {% endfor %}
+          {% if not tags %}
+            <span class="sub">Тегов пока нет — <a href="{{ url_for('catalogs') }}">создайте в справочнике</a></span>
+          {% endif %}
+        </div>
+      </div>
     </div>
     <div class="btn-row">
       <button class="btn primary" type="submit">Сохранить</button>

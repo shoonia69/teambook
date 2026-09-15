@@ -18,6 +18,13 @@
     {% if emp.salary %} · <strong style="color:var(--text)">{{ emp.salary }}</strong>{% endif %}
     {% if emp.hire_date %} · <span title="Дата приёма на работу">принят с {{ (emp.hire_date or '')[:10] }}</span>{% endif %}
   </div>
+  {% if emp_tags %}
+  <div class="emp-tags" style="margin-top:10px">
+    {% for t in emp_tags %}
+      <span class="tag-chip" style="--c:{{ t.color }}">{{ t.name }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
 </div>
 
 <!-- История изменений должности/зарплаты -->

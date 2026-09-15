@@ -102,6 +102,26 @@ a.view { color: var(--accent2); font-weight: 500; }
 .tag { display: inline-block; padding: 2px 9px; border-radius: 12px; font-size: 12px; font-weight: 600; }
 .tag-1H { background: rgba(79, 140, 255, .15); color: var(--accent); }
 .tag-2H { background: rgba(56, 217, 169, .15); color: var(--accent2); }
+.emp-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+.tag-chip {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  background: color-mix(in srgb, var(--c) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--c) 55%, transparent);
+}
+.tag-chip-mini {
+  display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px;
+  background: color-mix(in srgb, var(--c) 20%, transparent);
+  border: 1px solid color-mix(in srgb, var(--c) 50%, transparent);
+}
+.tag-select { display: flex; flex-wrap: wrap; gap: 8px; }
+.tag-option { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.tag-option input { accent-color: var(--c); }
+.tag-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
 
 /* ---------- forms ---------- */
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }

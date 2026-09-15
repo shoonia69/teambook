@@ -127,6 +127,19 @@ CREATE TABLE IF NOT EXISTS meetings (
     summary     TEXT DEFAULT '',
     created_at  TEXT DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS tags (
+    id     INTEGER PRIMARY KEY AUTOINCREMENT,
+    name   TEXT NOT NULL UNIQUE,
+    color  TEXT NOT NULL DEFAULT '#5B8DEF',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS employee_tags (
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    tag_id      INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (employee_id, tag_id)
+);
 """
 
 
@@ -327,9 +340,26 @@ def index():
 
     employees = [
         {"id": r["id"], "name": r["name"], "position": r["position"],
-         "department": r["department"], "salary": r["salary"]}
+         "department": r["department"], "salary": r["salary"], "tags": []}
         for r in rows
     ]
+
+    # собрать теги всех показанных сотрудников одним запросом
+    if employees:
+        ids = [e["id"] for e in employees]
+        marks = ",".join("?" * len(ids))
+        tag_rows = db.execute(
+            f"""SELECT et.employee_id, t.id, t.name, t.color FROM employee_tags et
+                JOIN tags t ON t.id = et.tag_id
+                WHERE et.employee_id IN ({marks}) ORDER BY t.name""",
+            tuple(ids),
+        ).fetchall()
+        tagmap = {}
+        for tr in tag_rows:
+            tagmap.setdefault(tr["employee_id"], []).append(
+                {"id": tr["id"], "name": tr["name"], "color": tr["color"]})
+        for e in employees:
+            e["tags"] = tagmap.get(e["id"], [])
 
     # Поиск по имени/фамилии (регистронезависимо, поддержка кириллицы)
     if q:
@@ -358,13 +388,22 @@ def catalogs():
     db = get_db()
     positions = db.execute("SELECT * FROM positions ORDER BY name").fetchall()
     departments = db.execute("SELECT * FROM departments ORDER BY name").fetchall()
-    return render_template("catalogs.html", positions=positions, departments=departments)
+    tags = db.execute("SELECT id, name, color, "
+                      "(SELECT COUNT(*) FROM employee_tags et WHERE et.tag_id=tags.id) AS used "
+                      "FROM tags ORDER BY name").fetchall()
+    return render_template("catalogs.html", positions=positions,
+                           departments=departments, tags=tags)
+
+
+# Палитра цветов для тегов (по умолчанию при создании)
+TAG_COLORS = ["#5B8DEF", "#E4572E", "#1B998B", "#E9C46A", "#C44536",
+              "#772D8B", "#2A9D8F", "#D9667A", "#3F8B4F", "#6D597A", "#17A2B8", "#E07A5F"]
 
 
 @app.route("/catalog/<kind>/add", methods=["POST"])
 @login_required
 def catalog_add(kind):
-    if kind not in ("position", "department"):
+    if kind not in ("position", "department", "tag"):
         abort(404)
     name = request.form.get("name", "").strip()
     if not name:
@@ -372,7 +411,12 @@ def catalog_add(kind):
     else:
         db = get_db()
         try:
-            db.execute(f"INSERT INTO {kind}s (name) VALUES (?)", (name,))
+            if kind == "tag":
+                n = db.execute("SELECT COUNT(*) c FROM tags").fetchone()["c"]
+                color = TAG_COLORS[n % len(TAG_COLORS)]
+                db.execute("INSERT INTO tags (name, color) VALUES (?,?)", (name, color))
+            else:
+                db.execute(f"INSERT INTO {kind}s (name) VALUES (?)", (name,))
             db.commit()
             flash(f"Добавлено: {name}", "ok")
         except sqlite3.IntegrityError:
@@ -383,7 +427,7 @@ def catalog_add(kind):
 @app.route("/catalog/<kind>/<int:cid>/rename", methods=["POST"])
 @login_required
 def catalog_rename(kind, cid):
-    if kind not in ("position", "department"):
+    if kind not in ("position", "department", "tag"):
         abort(404)
     name = request.form.get("name", "").strip()
     if not name:
@@ -402,10 +446,12 @@ def catalog_rename(kind, cid):
 @app.route("/catalog/<kind>/<int:cid>/delete", methods=["POST"])
 @login_required
 def catalog_delete(kind, cid):
-    if kind not in ("position", "department"):
+    if kind not in ("position", "department", "tag"):
         abort(404)
     db = get_db()
-    # SET NULL снимет ссылку с сотрудников
+    # SET NULL снимет ссылку с сотрудников; для тегов — снимем связи в employee_tags
+    if kind == "tag":
+        db.execute("DELETE FROM employee_tags WHERE tag_id=?", (cid,))
     db.execute(f"DELETE FROM {kind}s WHERE id=?", (cid,))
     db.commit()
     flash("Удалено", "ok")
@@ -428,8 +474,10 @@ def employee_new():
     positions, departments = _cat_options(db)
     if request.method == "POST":
         return _save_employee(None)
+    tags = db.execute("SELECT * FROM tags ORDER BY name").fetchall()
     return render_template("employee_form.html", emp={}, title="Новый сотрудник",
-                           positions=positions, departments=departments)
+                           positions=positions, departments=departments, tags=tags,
+                           employee_tag_ids=[])
 
 
 @app.route("/employee/<int:eid>/edit", methods=["GET", "POST"])
@@ -442,8 +490,10 @@ def employee_edit(eid):
     if request.method == "POST":
         return _save_employee(eid)
     positions, departments = _cat_options(db)
+    tags = db.execute("SELECT * FROM tags ORDER BY name").fetchall()
     return render_template("employee_form.html", emp=emp, title="Редактирование",
-                           positions=positions, departments=departments)
+                           positions=positions, departments=departments, tags=tags,
+                           employee_tag_ids=_employee_tags(db, eid))
 
 
 def _clean_int(val):
@@ -480,9 +530,29 @@ def _save_employee(eid):
             "WHERE id=?",
             (name, pid, did, salary, hire_date, eid),
         )
+    # Теги сотрудника (many-to-many) — перезапись связей
+    _save_employee_tags(db, eid, request.form.getlist("tag_ids"))
     db.commit()
     flash("Сотрудник сохранён", "ok")
     return redirect(url_for("employee_view", eid=eid))
+
+
+def _save_employee_tags(db, eid, tag_ids):
+    """Обновить набор тегов сотрудника (перезапись many-to-many)."""
+    db.execute("DELETE FROM employee_tags WHERE employee_id=?", (eid,))
+    seen = set()
+    for v in tag_ids:
+        t = _clean_int(v)
+        if t is not None and t not in seen:
+            seen.add(t)
+            db.execute("INSERT OR IGNORE INTO employee_tags (employee_id, tag_id) "
+                       "VALUES (?,?)", (eid, t))
+
+
+def _employee_tags(db, eid):
+    """Вернуть список тегов сотрудника."""
+    return [r["tag_id"] for r in db.execute(
+        "SELECT tag_id FROM employee_tags WHERE employee_id=?", (eid,)).fetchall()]
 
 
 @app.route("/employee/<int:eid>")
@@ -508,6 +578,13 @@ def employee_view(eid):
     year = request.args.get("year", type=int, default=None)
     if year is None and years:
         year = years[0]["year"]
+
+    # Теги сотрудника
+    emp_tags = db.execute(
+        """SELECT t.id, t.name, t.color FROM tags t
+           JOIN employee_tags et ON et.tag_id = t.id
+           WHERE et.employee_id=? ORDER BY t.name""", (eid,)
+    ).fetchall()
 
     records = db.execute(
         "SELECT * FROM year_records WHERE employee_id=? AND year=?",
@@ -543,6 +620,7 @@ def employee_view(eid):
         meetings=meetings,
         history=history,
         positions=positions,
+        emp_tags=emp_tags,
         now_year=datetime.now().year,
     )
 

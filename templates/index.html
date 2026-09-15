@@ -70,6 +70,7 @@
       <thead>
         <tr>
           <th>Сотрудник</th>
+          <th>Теги</th>
           <th>Отдел</th>
           <th>Должность</th>
           <th>Зарплата</th>
@@ -79,6 +80,17 @@
         {% for e in employees %}
         <tr>
           <td class="name"><a class="emp-link" href="{{ url_for('employee_view', eid=e.id) }}">{{ e.name }}</a></td>
+          <td>
+            {% if e.tags %}
+              <div class="emp-tags">
+              {% for t in e.tags %}
+                <span class="tag-chip" style="--c:{{ t.color }}">{{ t.name }}</span>
+              {% endfor %}
+              </div>
+            {% else %}
+              <span class="sub">—</span>
+            {% endif %}
+          </td>
           <td>{{ e.department or '—' }}</td>
           <td><span class="sub">{{ e.position or '—' }}</span></td>
           <td>{{ e.salary or '—' }}</td>

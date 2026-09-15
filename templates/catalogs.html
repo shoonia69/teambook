@@ -58,6 +58,34 @@
       <button class="btn primary small" type="submit">+ Добавить</button>
     </form>
   </div>
+
+  <!-- Теги -->
+  <div class="card">
+    <div class="panel-title">Теги</div>
+    {% for t in tags %}
+      <div class="cat-row">
+        <form method="post" action="{{ url_for('catalog_rename', kind='tag', cid=t.id) }}"
+              class="cat-edit tag-edit">
+          <span class="tag-dot" style="background:{{ t.color }}"></span>
+          <input type="text" name="name" value="{{ t.name }}">
+          <button class="btn small" type="submit" title="Переименовать">💾</button>
+        </form>
+        <span class="sub tag-used">{{ t.used }} чел.</span>
+        <form method="post" action="{{ url_for('catalog_delete', kind='tag', cid=t.id) }}"
+              onsubmit="return confirm('Удалить тег «{{ t.name }}»? Снимется у всех сотрудников.')">
+          <button class="btn small danger" type="submit" title="Удалить">✕</button>
+        </form>
+      </div>
+    {% else %}
+      <div class="empty">Тегов пока нет</div>
+    {% endfor %}
+
+    <form method="post" action="{{ url_for('catalog_add', kind='tag') }}" class="cat-add">
+      <input type="text" name="name" placeholder="Новый тег..." required>
+      <button class="btn primary small" type="submit">+ Добавить</button>
+    </form>
+    <div class="sub" style="margin-top:8px">Теги отмечают сотрудника (например: риск ухода, наставник, зона роста). Цвет выбирается автоматически.</div>
+  </div>
 </div>
 
 {% endblock %}
