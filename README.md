@@ -38,41 +38,79 @@
 
 ## Быстрый старт (Docker)
 
-### 1. Подготовка
+Требуется: **Docker + Docker Compose** (входит в Docker Desktop / Docker Engine).
 
-Требуется: Docker + Docker Compose.
+### Способ А — из исходников (рекомендуется)
 
-### 2. Настройка
+Клонируйте репозиторий и перейдите в папку:
+
+```bash
+git clone https://github.com/shoonia69/teambook.git
+cd teambook
+```
 
 Создайте файл `.env` рядом с `docker-compose.yml`:
 
 ```bash
 # Пароль для входа в приложение (обязательно)
 HR_PASSWORD=мой_надёжный_пароль
-
 # Секретный ключ сессий — любая длинная случайная строка
-HR_SECRET_KEY=$(openssl rand -hex 24)   # или придумайте свою
+HR_SECRET_KEY=$(openssl rand -hex 24)
 ```
 
-> ⚠️ Без `HR_PASSWORD` контейнер сгенерирует временный пароль и выведет его в логи при первом старте.
-
-### 3. Запуск
+Запустите сборку и старт:
 
 ```bash
-docker compose up -d
+docker compose up -d --build
 ```
 
-Приложение будет доступно по адресу: **http://localhost:5500**
+Приложение поднимется на **http://localhost:5500**. Вход — по паролю из `HR_PASSWORD`.
 
-Вход — по паролю из `HR_PASSWORD`.
+### Способ Б — готовый Compose-блок
 
-### 4. Перенос на свой сервер / другой хост
+Если вы уже скопировали файлы проекта вручную (или просто хотите быстро поднять), создайте файл `docker-compose.yml` со следующим содержимым:
 
-Образ можно собрать из исходников на любом хосте:
+```yaml
+services:
+  teambook:
+    # Собирает образ из исходников текущего каталога
+    build:
+      context: .
+    image: teambook:latest
+    container_name: teambook
+    restart: unless-stopped
+    environment:
+      - HR_PASSWORD=${HR_PASSWORD:?задайте HR_PASSWORD в .env}
+      - HR_SECRET_KEY=${HR_SECRET_KEY:?задайте HR_SECRET_KEY в .env}
+    volumes:
+      - teambook_data:/app/data
+    ports:
+      - "5500:5000"
+
+volumes:
+  teambook_data:
+```
+
+Рядом создайте `.env` (см. выше), затем:
 
 ```bash
-docker build -t teambook:latest .
-docker compose up -d
+docker compose up -d --build
+```
+
+> ℹ️ Секреты (`HR_PASSWORD`, `HR_SECRET_KEY`) подставляются из `.env`, а не хранятся в самом compose-файле — не коммитьте `.env` в репозиторий.
+
+### Способ В — готовый образ из реестра
+
+Когда образ будет опубликован (например, `ghcr.io/shoonia69/teambook:latest`), запуск сведётся к:
+
+```bash
+docker pull ghcr.io/shoonia69/teambook:latest
+docker run -d --name teambook \
+  -p 5500:5000 \
+  -e HR_PASSWORD=мой_пароль \
+  -e HR_SECRET_KEY=мой_ключ \
+  -v teambook_data:/app/data \
+  ghcr.io/shoonia69/teambook:latest
 ```
 
 ---
@@ -91,7 +129,7 @@ docker compose up -d
 ## Хранение данных
 
 - Все данные — в одном файле SQLite.
-- Файл БД — `/app/data/` внутри контейнера. В `docker-compose.yml` объявлен named volume `hr_notes_data`, поэтому **данные переживают пересоздание контейнера**.
+- Файл БД — `/app/data/` внутри контейнера. В `docker-compose.yml` объявлен named volume `teambook_data`, поэтому **данные переживают пересоздание контейнера**.
 - Для бэкапа достаточно скопировать файл БД из volume (например: `docker cp teambook:/app/data/hr_notes.db ./`).
 
 ---
