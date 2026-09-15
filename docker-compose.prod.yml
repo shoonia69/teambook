@@ -1,6 +1,6 @@
 services:
   hr-notes:
-    image: ghcr.io/shoonia69/hr-notes:latest
+    image: ghcr.io/shoonia69/teambook:latest
     container_name: hr-notes
     restart: unless-stopped
     environment:

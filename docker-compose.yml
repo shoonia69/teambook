@@ -1,9 +1,6 @@
 services:
   teambook:
-    # Соберёт образ из исходников текущего каталога и потягает его как teambook:latest
-    build:
-      context: .
-    image: teambook:latest
+    image: ghcr.io/shoonia69/teambook:latest
     container_name: teambook
     restart: unless-stopped
     environment:
