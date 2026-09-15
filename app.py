@@ -28,6 +28,19 @@ try:
 except Exception:
     HAS_EXCEL = False
 
+try:
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib import colors
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.lib.enums import TA_CENTER
+    HAS_PDF = True
+except Exception:
+    HAS_PDF = False
+
 # --------------------------------------------------------------------------- #
 # Конфигурация
 # --------------------------------------------------------------------------- #
@@ -940,88 +953,259 @@ def _build_report_rows(data):
     return headers, rows
 
 
+def _register_pdf_font():
+    """Зарегистрировать TTF-шрифт с кириллицей (DejaVu в образе, Arial на Windows)."""
+    candidates = {
+        "DejaVuSans": [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        ],
+        "DejaVuSans-Bold": [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        ],
+    }
+    # Windows fallback (только для локальной разработки)
+    win = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts")
+    candidates["DejaVuSans"] += [os.path.join(win, "arial.ttf"),
+                                 os.path.join(win, "DejaVuSans.ttf")]
+    candidates["DejaVuSans-Bold"] += [os.path.join(win, "arialbd.ttf"),
+                                      os.path.join(win, "DejaVuSans-Bold.ttf")]
+    import re
+    for name, paths in candidates.items():
+        for p in paths:
+            if os.path.exists(p):
+                try:
+                    pdfmetrics.registerFont(TTFont(name, p))
+                    break
+                except Exception:
+                    continue
+    # aligned fallback
+    if "DejaVuSans" not in pdfmetrics.getRegisteredFontNames() and \
+       "Arial" in pdfmetrics.getRegisteredFontNames():
+        return "Arial"
+    if "DejaVuSans" in pdfmetrics.getRegisteredFontNames():
+        return "DejaVuSans"
+    return "Helvetica"
+
+
+def _build_report_pdf(data, title):
+    """Сгенерировать PDF-отчёт (таблица полугодий)."""
+    fn = "DejaVuSans"
+    try:
+        fn = _register_pdf_font()
+    except Exception:
+        pass
+
+    buf = tempfile.SpooledTemporaryFile()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4),
+                            rightMargin=10*mm, leftMargin=10*mm,
+                            topMargin=12*mm, bottomMargin=12*mm,
+                            title=title)
+    styles = getSampleStyleSheet()
+    base = ParagraphStyle(
+        "Base", parent=styles["Normal"], fontName=fn, fontSize=7.5,
+        leading=9, wordWrap="CJK")
+    hstyle = ParagraphStyle(
+        "H", parent=base, fontName=fn if fn == "DejaVuSans" else "Helvetica-Bold",
+        fontSize=8, leading=10, textColor=colors.white)
+    title_style = ParagraphStyle(
+        "Title", parent=base, fontSize=14, leading=18, spaceAfter=8)
+
+    story = [Paragraph(title, title_style)]
+
+    headers, rows = _build_report_rows(data)
+
+    # сокращаем длинные ячейки
+    def short(v, n=60):
+        s = str(v or "").replace("\n", " ").strip()
+        return s if len(s) <= n else s[:n-1] + "…"
+
+    table_data = [[Paragraph(h.replace(":", ":<br/>"), hstyle) for h in headers]]
+    for r in rows:
+        table_data.append([Paragraph(short(v), base) for v in r])
+
+    col_w = [28*mm, 14*mm, 20*mm, 11*mm, 12*mm] + [18*mm]*(len(headers)-5)
+    t = Table(table_data, colWidths=col_w, repeatRows=1)
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2B4C8F")),
+        ("GRID", (0, 0), (-1, -1), 0.2, colors.HexColor("#9AA7BC")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#EEF2F8")]),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+    ]))
+    story.append(t)
+    doc.build(story)
+    buf.seek(0)
+    return buf
+
+
+def _build_employee_pdf(data, title):
+    """PDF по одному сотруднику: карточка + полугодия + встречи."""
+    fn = "DejaVuSans"
+    try:
+        fn = _register_pdf_font()
+    except Exception:
+        pass
+
+    buf = tempfile.SpooledTemporaryFile()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            rightMargin=14*mm, leftMargin=14*mm,
+                            topMargin=14*mm, bottomMargin=14*mm, title=title)
+    styles = getSampleStyleSheet()
+    base = ParagraphStyle("Base", parent=styles["Normal"], fontName=fn,
+                          fontSize=9, leading=12, wordWrap="CJK")
+    h2 = ParagraphStyle("H2", parent=base, fontSize=12, leading=15, spaceAfter=6, spaceBefore=10)
+    h3 = ParagraphStyle("H3", parent=base, fontSize=10, leading=13, spaceAfter=4, spaceBefore=6)
+    title_style = ParagraphStyle("Title", parent=base, fontSize=16, leading=20, spaceAfter=10)
+
+    story = [Paragraph(title, title_style)]
+
+    item = data[0]
+    story.append(Table(
+        [["Сотрудник", item["name"]], ["Отдел", item["department"]],
+         ["Должность", item["position"]], ["Зарплата", item["salary"]],
+         ["Дата приёма", _fmt_date(item["hire_date"])]],
+        colWidths=[40*mm, 130*mm],
+        style=TableStyle([
+            ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#9AA7BC")),
+            ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#EEF2F8")),
+            ("ROWBACKGROUNDS", (0, 0), (-1, -1), [colors.white, colors.HexColor("#F8FAFD")]),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 5),
+        ]),
+    ))
+
+    labels = {"1H": "I полугодие", "2H": "II полугодие"}
+    sem_cols = [("goals_employee", "Цели сотрудника"),
+                ("proposals_manager", "Мои предложения"),
+                ("wishes_employee", "Пожелания сотрудника"),
+                ("comments", "Мои комментарии"),
+                ("colleagues_feedback", "Отзывы коллег")]
+    for code in SEMESTERS:
+        story.append(Paragraph(labels[code], h2))
+        rec = item["semesters"].get(code) or {}
+        for field, label in sem_cols:
+            val = (rec.get(field) or "").strip()
+            story.append(Paragraph(f"<b>{label}:</b>", h3))
+            story.append(Paragraph(val if val else "—", base))
+            story.append(Spacer(1, 3))
+
+    story.append(PageBreak())
+    story.append(Paragraph("Встречи 1-на-1", h2))
+    if item["meetings"]:
+        for m in item["meetings"]:
+            story.append(Paragraph(f"<b>{_fmt_date(m['date'])}</b>", h3))
+            story.append(Paragraph(m["summary"] or "—", base))
+            story.append(Spacer(1, 5))
+    else:
+        story.append(Paragraph("Встреч не было.", base))
+
+    doc.build(story)
+    buf.seek(0)
+    return buf
+
+
 @app.route("/report")
 @login_required
 def report_all():
-    """Скачать Excel-отчёт по всем сотрудникам за выбранный год."""
-    if not HAS_EXCEL:
-        flash("Модуль openpyxl недоступен на сервере", "error")
-        return redirect(url_for("index"))
+    """Скачать отчёт по всем сотрудникам за выбранный год (Excel или PDF)."""
     db = get_db()
     year = request.args.get("year", type=int) or datetime.now().year
+    fmt = request.args.get("format", "xlsx").lower().strip()
     data = _report_data(db, eid=None, year=year)
-    headers, rows = _build_report_rows(data)
 
-    wb = Workbook(); ws = wb.active; ws.title = f"Отчёт {year}"
-    # заголовок
-    ws.append(headers)
-    for cell in ws[1]:
-        cell.font = Font(bold=True, color="FFFFFF")
-        cell.fill = PatternFill(start_color="2B4C8F", end_color="2B4C8F", fill_type="solid")
-    for r in rows:
-        ws.append(r)
-    # ширина колонок
-    widths = [28, 18, 26, 14, 12] + [18] * (len(headers) - 5)
-    for idx, w in enumerate(widths, 1):
-        ws.column_dimensions[get_column_letter(idx)].width = w
-    for cell in ws[1]:
-        cell.alignment = Alignment(vertical="center", wrap_text=True)
-    ws.freeze_panes = "A2"
+    if fmt == "pdf":
+        if not HAS_PDF:
+            flash("Модуль reportlab недоступен на сервере", "error")
+            return redirect(url_for("index"))
+        buf = _build_report_pdf(data, f"TeamBook — отчёт за {year} год")
+        name = f"teambook_report_{year}.pdf"
+        mimetype = "application/pdf"
+        src = buf
+    else:
+        if not HAS_EXCEL:
+            flash("Модуль openpyxl недоступен на сервере", "error")
+            return redirect(url_for("index"))
+        headers, rows = _build_report_rows(data)
+        wb = Workbook(); ws = wb.active; ws.title = f"Отчёт {year}"
+        ws.append(headers)
+        for cell in ws[1]:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill(start_color="2B4C8F", end_color="2B4C8F", fill_type="solid")
+        for r in rows:
+            ws.append(r)
+        widths = [28, 18, 26, 14, 12] + [18] * (len(headers) - 5)
+        for idx, w in enumerate(widths, 1):
+            ws.column_dimensions[get_column_letter(idx)].width = w
+        for cell in ws[1]:
+            cell.alignment = Alignment(vertical="center", wrap_text=True)
+        ws.freeze_panes = "A2"
+        tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
+        wb.save(tmp.name); tmp.close()
+        name = f"teambook_report_{year}.xlsx"
+        mimetype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        src = tmp.name
 
-    tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
-    wb.save(tmp.name); tmp.close()
-    fname = f"teambook_report_{year}.xlsx"
-    resp = send_file(tmp.name, as_attachment=True, download_name=fname,
-                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                     max_age=0)
-    return resp
+    return send_file(src, as_attachment=True, download_name=name, mimetype=mimetype, max_age=0)
 
 
 @app.route("/employee/<int:eid>/report")
 @login_required
 def report_employee(eid):
-    """Скачать Excel-отчёт по одному сотруднику за выбранный год."""
-    if not HAS_EXCEL:
-        flash("Модуль openpyxl недоступен на сервере", "error")
-        return redirect(url_for("employee_view", eid=eid))
+    """Скачать отчёт по одному сотруднику за выбранный год (Excel или PDF)."""
     db = get_db()
     year = request.args.get("year", type=int) or datetime.now().year
+    fmt = request.args.get("format", "xlsx").lower().strip()
     data = _report_data(db, eid=eid, year=year)
-    headers, rows = _build_report_rows(data)
 
-    wb = Workbook(); ws = wb.active; ws.title = f"{data[0]['name'][:25]}"
-    ws.append(headers)
-    for cell in ws[1]:
-        cell.font = Font(bold=True, color="FFFFFF")
-        cell.fill = PatternFill(start_color="2B4C8F", end_color="2B4C8F", fill_type="solid")
-    for r in rows:
-        ws.append(r)
-    widths = [28, 18, 26, 14, 12] + [18] * (len(headers) - 5)
-    for idx, w in enumerate(widths, 1):
-        ws.column_dimensions[get_column_letter(idx)].width = w
-    for cell in ws[1]:
-        cell.alignment = Alignment(vertical="center", wrap_text=True)
-    ws.freeze_panes = "A2"
+    safe = None
+    if fmt == "pdf":
+        if not HAS_PDF:
+            flash("Модуль reportlab недоступен на сервере", "error")
+            return redirect(url_for("employee_view", eid=eid))
+        buf = _build_employee_pdf(data, f"TeamBook — {data[0]['name']} · {year}")
+        import re
+        safe = re.sub(r"[^\w\- ]", "", data[0]["name"]) or "employee"
+        name = f"teambook_{safe}_{year}.pdf"
+        mimetype = "application/pdf"
+        src = buf
+    else:
+        if not HAS_EXCEL:
+            flash("Модуль openpyxl недоступен на сервере", "error")
+            return redirect(url_for("employee_view", eid=eid))
+        headers, rows = _build_report_rows(data)
+        wb = Workbook(); ws = wb.active; ws.title = f"{data[0]['name'][:25]}"
+        ws.append(headers)
+        for cell in ws[1]:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill(start_color="2B4C8F", end_color="2B4C8F", fill_type="solid")
+        for r in rows:
+            ws.append(r)
+        widths = [28, 18, 26, 14, 12] + [18] * (len(headers) - 5)
+        for idx, w in enumerate(widths, 1):
+            ws.column_dimensions[get_column_letter(idx)].width = w
+        for cell in ws[1]:
+            cell.alignment = Alignment(vertical="center", wrap_text=True)
+        ws.freeze_panes = "A2"
+        ws2 = wb.create_sheet("Встречи 1-на-1")
+        ws2.append(["Дата", "Итоги встречи"])
+        for cell in ws2[1]:
+            cell.font = Font(bold=True)
+        for m in data[0]["meetings"]:
+            ws2.append([_fmt_date(m["date"]), m["summary"]])
+        ws2.column_dimensions["A"].width = 14
+        ws2.column_dimensions["B"].width = 90
+        tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
+        wb.save(tmp.name); tmp.close()
+        import re
+        safe = re.sub(r"[^\w\- ]", "", data[0]["name"]) or "employee"
+        name = f"teambook_{safe}_{year}.xlsx"
+        mimetype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        src = tmp.name
 
-    # лист со встречами
-    ws2 = wb.create_sheet("Встречи 1-на-1")
-    ws2.append(["Дата", "Итоги встречи"])
-    for cell in ws2[1]:
-        cell.font = Font(bold=True)
-    for m in data[0]["meetings"]:
-        ws2.append([_fmt_date(m["date"]), m["summary"]])
-    ws2.column_dimensions["A"].width = 14
-    ws2.column_dimensions["B"].width = 90
-
-    tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
-    wb.save(tmp.name); tmp.close()
-    import re
-    safe = re.sub(r"[^\w\- ]", "", data[0]["name"]) or "employee"
-    fname = f"teambook_{safe}_{year}.xlsx"
-    resp = send_file(tmp.name, as_attachment=True, download_name=fname,
-                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                     max_age=0)
-    return resp
+    return send_file(src, as_attachment=True, download_name=name, mimetype=mimetype, max_age=0)
 
 
 # --------------------------------------------------------------------------- #

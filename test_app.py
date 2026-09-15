@@ -297,6 +297,15 @@ r = c.get(f"/employee/{eid}/report?year=2026")
 check("экспорт по одному сотруднику (Excel) скачивается", r.status_code == 200 and r.data[:2] == b"PK")
 check("имя файла отчёта по сотруднику", f"teambook_" in (r.headers.get("Content-Disposition") or ""))
 
+# --- экспорт в PDF ---
+r = c.get("/report?year=2026&format=pdf")
+check("экспорт по всем (PDF) скачивается", r.status_code == 200 and r.data[:4] == b"%PDF")
+check("PDF content-type", (r.headers.get("Content-Type") or "").find("pdf") > -1)
+check("PDF имя файла", ".pdf" in (r.headers.get("Content-Disposition") or ""))
+r = c.get(f"/employee/{eid}/report?year=2026&format=pdf")
+check("экспорт по одному сотруднику (PDF) скачивается", r.status_code == 200 and r.data[:4] == b"%PDF")
+check("PDF по сотруднику имя", ".pdf" in (r.headers.get("Content-Disposition") or ""))
+
 # --- переименование справочника ---
 d1 = dbq("SELECT * FROM departments WHERE name='ТП Orion soft'")[0]["id"]
 c.post(f"/catalog/department/{d1}/rename", data={"name": "ТП Orion (переим)"})
