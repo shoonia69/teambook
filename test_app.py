@@ -217,6 +217,40 @@ check("комбинированный фильтр не падает", r and "С
 r = c.post("/employee/new", data={"name": "", "position_id": "", "department_id": "", "salary": ""})
 check("пустое имя отклонено", r.status_code == 302)
 
+# --- поиск по имени/фамилии ---
+# оба сотрудника: Иванов Иван (ТП Orion) и Петров Пётр (ТП Сбер)
+r = c.get("/?q=Иванов").get_data(as_text=True)
+check("поиск по фамилии → только Иванов", "Иванов Иван" in r and "Петров Пётр" not in r)
+r = c.get("/?q=Пётр").get_data(as_text=True)
+check("поиск по имени → только Петров", "Петров Пётр" in r and "Иванов Иван" not in r)
+r = c.get("/?q=Орion").get_data(as_text=True)  # латиница в русском имени не должна найти
+check("поиск без совпадений → пусто", "Нет сотрудников" in r or "Иванов Иван" not in r)
+r = c.get("/?q=иванов").get_data(as_text=True)  # регистр не важен
+check("поиск регистронезависимый", "Иванов Иван" in r)
+r = c.get("/?department=ТП+Orion+soft&q=Иванов").get_data(as_text=True)
+check("поиск комбинируется с фильтром отдела", "Иванов Иван" in r and "Петров Пётр" not in r)
+
+# --- резервное копирование: экспорт ---
+r = c.get("/backup")
+check("страница резервной копии доступна", "Резервное копирование" in r.get_data(as_text=True))
+r = c.get("/backup/export")
+check("экспорт БД (скачивание файла)", r.status_code == 200 and
+      (r.headers.get("Content-Disposition") or "").startswith("attachment"))
+backup_bytes = r.data
+
+# --- резервное копирование: импорт (валидация) ---
+# неверный файл
+from io import BytesIO
+r = c.post("/backup/import", data={"dbfile": (BytesIO(b"not a db"), "bad.txt")},
+           content_type="multipart/form-data", follow_redirects=True)
+check("импорт мусорного файла отклонён", "Не удалось прочитать" in r.get_data(as_text=True) or
+      "не похож" in r.get_data(as_text=True))
+
+# корректный файл = экспортированная копия (перезапишет тестовую БД — ок)
+r = c.post("/backup/import", data={"dbfile": (BytesIO(backup_bytes), "teambook_backup_1.db")},
+           content_type="multipart/form-data", follow_redirects=True)
+check("импорт корректного файла проходит", r.status_code == 200)
+
 # --- переименование справочника ---
 d1 = dbq("SELECT * FROM departments WHERE name='ТП Orion soft'")[0]["id"]
 c.post(f"/catalog/department/{d1}/rename", data={"name": "ТП Orion (переим)"})

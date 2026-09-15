@@ -6,7 +6,7 @@
   <div class="year-tabs">
     {% for y in years %}
       <a class="year-tab {{ 'active' if y == year else '' }}"
-         href="{{ url_for('index', year=y, department=sel_department, position=sel_position) }}">{{ y }}</a>
+         href="{{ url_for('index', year=y, department=sel_department, position=sel_position, q=sel_q) }}">{{ y }}</a>
     {% endfor %}
     {% if not years %}
       <span class="year-tab active">{{ year }}</span>
@@ -16,35 +16,51 @@
   <a class="btn primary" href="{{ url_for('employee_new') }}">+ Добавить сотрудника</a>
 </div>
 
+<!-- Поиск по имени/фамилии -->
+<div class="card filter-panel">
+  <form class="filter-row" method="get" action="{{ url_for('index') }}">
+    <input type="hidden" name="year" value="{{ year }}">
+    <input type="hidden" name="department" value="{{ sel_department }}">
+    <input type="hidden" name="position" value="{{ sel_position }}">
+    <label class="filter-label" for="q" style="margin:0">Поиск:</label>
+    <input type="text" id="q" name="q" value="{{ sel_q or '' }}"
+           placeholder="Имя или фамилия сотрудника..." style="max-width:300px">
+    <button class="btn small" type="submit">Найти</button>
+    {% if sel_q %}
+      <a class="btn small" href="{{ url_for('index', year=year, department=sel_department, position=sel_position) }}">✕ сброс</a>
+    {% endif %}
+  </form>
+</div>
+
 <!-- Фильтры: отдел (вкладки) и должность (список) -->
 <div class="card filter-panel">
   <div class="filter-row">
     <span class="filter-label">Отдел:</span>
     <a class="chips chip {{ 'active' if not sel_department else '' }}"
-       href="{{ url_for('index', year=year, position=sel_position) }}">Все</a>
+       href="{{ url_for('index', year=year, position=sel_position, q=sel_q) }}">Все</a>
     {% for d in departments %}
       <a class="chips chip {{ 'active' if d == sel_department else '' }}"
-         href="{{ url_for('index', year=year, department=d, position=sel_position) }}">{{ d }}</a>
+         href="{{ url_for('index', year=year, department=d, position=sel_position, q=sel_q) }}">{{ d }}</a>
     {% endfor %}
   </div>
   <div class="filter-row">
     <label class="filter-label" for="pos-filter" style="margin:0">Должность:</label>
     <select id="pos-filter" name="position" onchange="location.href=this.value" style="max-width:280px">
-      <option value="{{ url_for('index', year=year, department=sel_department) }}">— все должности —</option>
+      <option value="{{ url_for('index', year=year, department=sel_department, q=sel_q) }}">— все должности —</option>
       {% for p in positions %}
-        <option value="{{ url_for('index', year=year, department=sel_department, position=p) }}"
+        <option value="{{ url_for('index', year=year, department=sel_department, position=p, q=sel_q) }}"
                 {{ 'selected' if p == sel_position else '' }}>{{ p }}</option>
       {% endfor %}
     </select>
     {% if sel_department or sel_position %}
-      <a class="btn small" href="{{ url_for('index', year=year) }}">✕ Сбросить фильтры</a>
+      <a class="btn small" href="{{ url_for('index', year=year, q=sel_q) }}">✕ Сбросить фильтры</a>
     {% endif %}
   </div>
 </div>
 
 <div class="card">
   <div class="panel-title">Сотрудники · {{ year }} год
-    {% if sel_department or sel_position %}
+    {% if sel_department or sel_position or sel_q %}
       <span class="sub" style="font-size:13px">(отфильтровано)</span>
     {% endif %}
   </div>

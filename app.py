@@ -9,11 +9,14 @@ TeamBook — блокнот руководителя.
 import os
 import sqlite3
 import secrets
+import shutil
+import tempfile
 from datetime import datetime
 from functools import wraps
 
 from flask import (
     Flask, request, redirect, url_for, render_template, session, flash, abort, g,
+    send_file,
 )
 
 # --------------------------------------------------------------------------- #
@@ -268,9 +271,10 @@ def index():
     if year is None:
         year = all_years[0] if all_years else datetime.now().year
 
-    # Фильтры по отделу и должности
+    # Фильтры по отделу и должности + поиск по имени/фамилии
     department = request.args.get("department", "").strip()
     position = request.args.get("position", "").strip()
+    q = request.args.get("q", "").strip()
 
     all_departments = [r["name"] for r in db.execute(
         "SELECT DISTINCT d.name FROM departments d "
@@ -323,6 +327,12 @@ def index():
                 "updated_at": r["updated_at"],
             }
 
+    # Поиск по имени/фамилии (регистронезависимо, поддержка кириллицы)
+    if q:
+        ql = q.lower().replace("ё", "е")
+        employees = {eid: e for eid, e in employees.items()
+                     if ql in e["name"].lower().replace("ё", "е")}
+
     return render_template(
         "index.html",
         employees=list(employees.values()),
@@ -333,6 +343,7 @@ def index():
         positions=all_positions,
         sel_department=department,
         sel_position=position,
+        sel_q=q,
     )
 
 
@@ -704,6 +715,88 @@ def meeting_delete(mid):
         db.commit()
         return redirect(url_for("employee_view", eid=mt["employee_id"]))
     abort(404)
+
+
+# --------------------------------------------------------------------------- #
+# Резервное копирование / восстановление БД
+# --------------------------------------------------------------------------- #
+@app.route("/backup")
+@login_required
+def backup_page():
+    from os import path as _p
+    size = _p.getsize(DB_PATH) if _p.exists(DB_PATH) else 0
+    return render_template("backup.html", db_size=size,
+                           db_modified=_p.getmtime(DB_PATH) if _p.exists(DB_PATH) else 0)
+
+
+@app.route("/backup/export")
+@login_required
+def backup_export():
+    """Скачать копию БД: делаем консистентную копию через SQLite backup API."""
+    from os import path as _p
+    _p.exists(DB_PATH) or abort(404)
+    _, tmp = tempfile.mkstemp(suffix=".db")
+    src = sqlite3.connect(DB_PATH)
+    dst = sqlite3.connect(tmp)
+    with dst:
+        src.backup(dst)
+    src.close(); dst.close()
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    fname = f"teambook_backup_{stamp}.db"
+    return send_file(tmp, as_attachment=True, download_name=fname,
+                     mimetype="application/vnd.sqlite3", max_age=0)
+
+
+@app.route("/backup/import", methods=["POST"])
+@login_required
+def backup_import():
+    """Восстановить БД из загруженного файла. Текущая БД бэкапируется рядом."""
+    f = request.files.get("dbfile")
+    if not f or not f.filename:
+        flash("Не выбран файл для восстановления", "error")
+        return redirect(url_for("backup_page"))
+
+    # Валидация: должен быть корректный SQLite-файл с нашими таблицами
+    suffix = "" if f.filename.lower().endswith(".db") else ".db"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tf:
+        f.save(tf.name)
+        upload_path = tf.name
+
+    ok = False
+    con = None
+    try:
+        con = sqlite3.connect(upload_path)
+        con.row_factory = sqlite3.Row
+        # проверяем "сигнатуру" SQLite и наличие ключевых таблиц
+        tables = {r[0] for r in con.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+        if "employees" not in tables or "positions" not in tables or "departments" not in tables:
+            flash("Файл не похож на БД TeamBook (не найдены таблицы)", "error")
+            ok = False
+        elif con.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+            flash("Файл повреждён: integrity_check не прошёл", "error")
+            ok = False
+        else:
+            ok = True
+    except Exception as e:
+        flash(f"Не удалось прочитать файл: {e}", "error")
+    finally:
+        if con is not None:
+            con.close()
+        if not ok and os.path.exists(upload_path):
+            os.remove(upload_path)
+
+    if not ok:
+        return redirect(url_for("backup_page"))
+
+    # Бэкап текущей БД перед перезаписью
+    backup_path = DB_PATH + ".pre_restore.bak"
+    if os.path.exists(DB_PATH):
+        shutil.copy2(DB_PATH, backup_path)
+    os.replace(upload_path, DB_PATH)
+
+    flash("База восстановлена из файла.", "ok")
+    return redirect(url_for("index"))
 
 
 # --------------------------------------------------------------------------- #
