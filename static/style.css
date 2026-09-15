@@ -136,13 +136,22 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .cat-add input { flex: 1; }
 
 /* ---------- records block ---------- */
-.semester-blocks { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.semester-blocks { display: grid; grid-template-columns: 1fr; gap: 18px; }
 .semester-block { background: var(--panel2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
 .semester-block h3 { margin: 0 0 4px; font-size: 16px; }
 .semester-title { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
 .semester-block .updated { color: var(--muted); font-size: 12px; }
 .field-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; margin: 12px 0 4px; }
 .field-label:first-child { margin-top: 0; }
+
+/* Горизонтальное расположение полей полугодия: сетка в 3 колонки */
+.semester-fields {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+.semester-fields .sfield { display: flex; flex-direction: column; }
+.semester-fields textarea { flex: 1; min-height: 110px; }
 
 /* ---------- details/summary (инлайн-правка) ---------- */
 details.inline-add, details.inline-edit { display: inline-block; }
@@ -177,4 +186,5 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
 
 @media (max-width: 760px) {
   .form-grid, .semester-blocks { grid-template-columns: 1fr; }
+  .semester-fields { grid-template-columns: 1fr; }
 }

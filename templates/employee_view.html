@@ -181,22 +181,32 @@
         <form method="post" action="{{ url_for('record_save', eid=emp.id) }}">
           <input type="hidden" name="year" value="{{ year }}">
           <input type="hidden" name="semester" value="{{ code }}">
+          <div class="semester-fields">
+            <div class="sfield">
+              <div class="field-label">Цели сотрудника</div>
+              <textarea name="goals_employee" placeholder="Какие цели ставил инженер на это полугодие">{{ (rec.goals_employee if rec else '') }}</textarea>
+            </div>
 
-          <div class="field-label">Цели сотрудника</div>
-          <textarea name="goals_employee" placeholder="Какие цели ставил инженер на это полугодие">{{ (rec.goals_employee if rec else '') }}</textarea>
+            <div class="sfield">
+              <div class="field-label">Мои предложения</div>
+              <textarea name="proposals_manager" placeholder="Что я предложил / поставил как руководитель">{{ (rec.proposals_manager if rec else '') }}</textarea>
+            </div>
 
-          <div class="field-label">Мои предложения</div>
-          <textarea name="proposals_manager" placeholder="Что я предложил / поставил как руководитель">{{ (rec.proposals_manager if rec else '') }}</textarea>
+            <div class="sfield">
+              <div class="field-label">Пожелания сотрудника</div>
+              <textarea name="wishes_employee" placeholder="Его пожелания, запросы, ожидания">{{ (rec.wishes_employee if rec else '') }}</textarea>
+            </div>
 
-          <div class="field-label">Пожелания сотрудника</div>
-          <textarea name="wishes_employee" placeholder="Его пожелания, запросы, ожидания">{{ (rec.wishes_employee if rec else '') }}</textarea>
+            <div class="sfield">
+              <div class="field-label">Мои комментарии</div>
+              <textarea name="comments" placeholder="Комментарии, наблюдения, оценка">{{ (rec.comments if rec else '') }}</textarea>
+            </div>
 
-          <div class="field-label">Мои комментарии</div>
-          <textarea name="comments" placeholder="Комментарии, наблюдения, оценка">{{ (rec.comments if rec else '') }}</textarea>
-
-          <div class="field-label">Отзывы коллег</div>
-          <textarea name="colleagues_feedback" placeholder="Отзывы, впечатления, мнения коллег о сотруднике">{{ (rec.colleagues_feedback if rec else '') }}</textarea>
-
+            <div class="sfield">
+              <div class="field-label">Отзывы коллег</div>
+              <textarea name="colleagues_feedback" placeholder="Отзывы, впечатления, мнения коллег о сотруднике">{{ (rec.colleagues_feedback if rec else '') }}</textarea>
+            </div>
+          </div>
           <div class="btn-row">
             <button class="btn primary" type="submit">Сохранить</button>
           </div>
