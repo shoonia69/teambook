@@ -3,6 +3,12 @@
 {% block content %}
 
 <div class="toolbar">
+  <form method="get" action="{{ url_for('report_all') }}" class="filter-row" style="margin:0">
+    <label class="filter-label" for="rep-year" style="margin:0">Отчёт за год:</label>
+    <input type="number" id="rep-year" name="year" min="1990" max="2100"
+           value="{{ now_year }}" style="max-width:90px">
+    <button class="btn small primary" type="submit">⬇ Отчёт (Excel)</button>
+  </form>
   <div class="spacer"></div>
   <a class="btn primary" href="{{ url_for('employee_new') }}">+ Добавить сотрудника</a>
 </div>

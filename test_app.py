@@ -285,6 +285,18 @@ r = c.post("/backup/import", data={"dbfile": (BytesIO(backup_bytes), "teambook_b
            content_type="multipart/form-data", follow_redirects=True)
 check("импорт корректного файла проходит", r.status_code == 200)
 
+# --- экспорт в Excel ---
+r = c.get("/report?year=2026")
+xlsx = r.data
+check("экспорт по всем (Excel) скачивается", r.status_code == 200 and
+      xlsx[:2] == b"PK" and
+      "spreadsheetml" in (r.headers.get("Content-Disposition") or "").lower() or
+      (r.headers.get("Content-Type") or "").startswith("application/vnd.openxml"))
+check("имя файла отчёта содержит год", "2026" in (r.headers.get("Content-Disposition") or ""))
+r = c.get(f"/employee/{eid}/report?year=2026")
+check("экспорт по одному сотруднику (Excel) скачивается", r.status_code == 200 and r.data[:2] == b"PK")
+check("имя файла отчёта по сотруднику", f"teambook_" in (r.headers.get("Content-Disposition") or ""))
+
 # --- переименование справочника ---
 d1 = dbq("SELECT * FROM departments WHERE name='ТП Orion soft'")[0]["id"]
 c.post(f"/catalog/department/{d1}/rename", data={"name": "ТП Orion (переим)"})

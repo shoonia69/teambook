@@ -165,6 +165,7 @@
     <button class="btn small danger" type="submit">Удалить год {{ year }}</button>
   </form>
   {% endif %}
+  <a class="btn small primary" href="{{ url_for('report_employee', eid=emp.id, year=year or now_year) }}">⬇ Отчёт (Excel)</a>
 </div>
 
 <!-- Полугодовые записи -->

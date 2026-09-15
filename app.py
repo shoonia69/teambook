@@ -19,6 +19,15 @@ from flask import (
     send_file,
 )
 
+try:
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+    from openpyxl.comments import Comment
+    HAS_EXCEL = True
+except Exception:
+    HAS_EXCEL = False
+
 # --------------------------------------------------------------------------- #
 # Конфигурация
 # --------------------------------------------------------------------------- #
@@ -323,6 +332,7 @@ def index():
         sel_department=department,
         sel_position=position,
         sel_q=q,
+        now_year=datetime.now().year,
     )
 
 
@@ -822,6 +832,196 @@ def backup_import():
 
     flash("База восстановлена из файла.", "ok")
     return redirect(url_for("index"))
+
+
+# --------------------------------------------------------------------------- #
+# Экспорт в Excel (отчёт по полугодовым записям)
+# --------------------------------------------------------------------------- #
+def _report_data(db, eid=None, year=None):
+    """Собрать строки отчёта: по всем сотрудникам или по одному (eid)."""
+    year = year or datetime.now().year
+    if eid is None:
+        rows = db.execute(
+            """
+            SELECT e.id, e.name, e.salary, e.hire_date,
+                   p.name AS position, d.name AS department
+            FROM employees e
+            LEFT JOIN positions p ON p.id = e.position_id
+            LEFT JOIN departments d ON d.id = e.department_id
+            WHERE e.active = 1
+            ORDER BY d.name, e.name
+            """
+        ).fetchall()
+        emp_ids = [r["id"] for r in rows]
+        by_id = {r["id"]: r for r in rows}
+    else:
+        e = db.execute(
+            """
+            SELECT e.id, e.name, e.salary, e.hire_date,
+                   p.name AS position, d.name AS department
+            FROM employees e
+            LEFT JOIN positions p ON p.id = e.position_id
+            LEFT JOIN departments d ON d.id = e.department_id
+            WHERE e.id=?
+            """, (eid,)
+        ).fetchone()
+        if not e:
+            abort(404)
+        emp_ids = [e["id"]]
+        by_id = {e["id"]: e}
+
+    recs = {}
+    if emp_ids:
+        marks = ",".join("?" * len(emp_ids))
+        rr = db.execute(
+            f"""
+            SELECT employee_id, semester, goals_employee, proposals_manager,
+                   wishes_employee, comments, colleagues_feedback, updated_at
+            FROM year_records WHERE year=? AND employee_id IN ({marks})
+            """, (year, *emp_ids)
+        ).fetchall()
+        for r in rr:
+            recs.setdefault(r["employee_id"], {})[r["semester"]] = r
+
+    # встречи (для отчёта по одному сотруднику)
+    meetings = {}
+    if eid:
+        mm = db.execute(
+            "SELECT date, summary FROM meetings WHERE employee_id=? "
+            "ORDER BY date DESC, id DESC", (eid,)
+        ).fetchall()
+        meetings = [{"date": m["date"], "summary": m["summary"]} for m in mm]
+
+    out = []
+    for i in emp_ids:
+        e = by_id[i]
+        out.append({
+            "name": e["name"],
+            "department": e["department"] or "—",
+            "position": e["position"] or "—",
+            "salary": e["salary"] or "—",
+            "hire_date": e["hire_date"] or "",
+            "year": year,
+            "semesters": {
+                s: dict(recs.get(i, {}).get(s) or {}) for s in SEMESTERS
+            },
+            "meetings": meetings if eid else [],
+        })
+    return out
+
+
+def _fmt_date(v):
+    s = (v or "")
+    return s[:10] if s else ""
+
+
+def _build_report_rows(data):
+    """Превратить данные отчёта в плоские строки для Excel."""
+    base = ["Сотрудник", "Отдел", "Должность", "Зарплата", "Дата приёма"]
+    sem_cols = ["Цели", "Мои предложения", "Пожелания", "Мои комментарии", "Отзывы коллег"]
+    headers = list(base)
+    for code in SEMESTERS:
+        labels = {"1H": "I полугодие", "2H": "II полугодие"}
+        for c in sem_cols:
+            headers.append(f"{labels[code]}: {c}")
+
+    rows = []
+    for item in data:
+        row = [
+            item["name"], item["department"], item["position"],
+            item["salary"], _fmt_date(item["hire_date"]),
+        ]
+        for code in SEMESTERS:
+            rec = item["semesters"].get(code) or {}
+            for field in ["goals_employee", "proposals_manager",
+                          "wishes_employee", "comments", "colleagues_feedback"]:
+                row.append((rec.get(field) or "").strip())
+        rows.append(row)
+    return headers, rows
+
+
+@app.route("/report")
+@login_required
+def report_all():
+    """Скачать Excel-отчёт по всем сотрудникам за выбранный год."""
+    if not HAS_EXCEL:
+        flash("Модуль openpyxl недоступен на сервере", "error")
+        return redirect(url_for("index"))
+    db = get_db()
+    year = request.args.get("year", type=int) or datetime.now().year
+    data = _report_data(db, eid=None, year=year)
+    headers, rows = _build_report_rows(data)
+
+    wb = Workbook(); ws = wb.active; ws.title = f"Отчёт {year}"
+    # заголовок
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill(start_color="2B4C8F", end_color="2B4C8F", fill_type="solid")
+    for r in rows:
+        ws.append(r)
+    # ширина колонок
+    widths = [28, 18, 26, 14, 12] + [18] * (len(headers) - 5)
+    for idx, w in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(idx)].width = w
+    for cell in ws[1]:
+        cell.alignment = Alignment(vertical="center", wrap_text=True)
+    ws.freeze_panes = "A2"
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
+    wb.save(tmp.name); tmp.close()
+    fname = f"teambook_report_{year}.xlsx"
+    resp = send_file(tmp.name, as_attachment=True, download_name=fname,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                     max_age=0)
+    return resp
+
+
+@app.route("/employee/<int:eid>/report")
+@login_required
+def report_employee(eid):
+    """Скачать Excel-отчёт по одному сотруднику за выбранный год."""
+    if not HAS_EXCEL:
+        flash("Модуль openpyxl недоступен на сервере", "error")
+        return redirect(url_for("employee_view", eid=eid))
+    db = get_db()
+    year = request.args.get("year", type=int) or datetime.now().year
+    data = _report_data(db, eid=eid, year=year)
+    headers, rows = _build_report_rows(data)
+
+    wb = Workbook(); ws = wb.active; ws.title = f"{data[0]['name'][:25]}"
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill(start_color="2B4C8F", end_color="2B4C8F", fill_type="solid")
+    for r in rows:
+        ws.append(r)
+    widths = [28, 18, 26, 14, 12] + [18] * (len(headers) - 5)
+    for idx, w in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(idx)].width = w
+    for cell in ws[1]:
+        cell.alignment = Alignment(vertical="center", wrap_text=True)
+    ws.freeze_panes = "A2"
+
+    # лист со встречами
+    ws2 = wb.create_sheet("Встречи 1-на-1")
+    ws2.append(["Дата", "Итоги встречи"])
+    for cell in ws2[1]:
+        cell.font = Font(bold=True)
+    for m in data[0]["meetings"]:
+        ws2.append([_fmt_date(m["date"]), m["summary"]])
+    ws2.column_dimensions["A"].width = 14
+    ws2.column_dimensions["B"].width = 90
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
+    wb.save(tmp.name); tmp.close()
+    import re
+    safe = re.sub(r"[^\w\- ]", "", data[0]["name"]) or "employee"
+    fname = f"teambook_{safe}_{year}.xlsx"
+    resp = send_file(tmp.name, as_attachment=True, download_name=fname,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                     max_age=0)
+    return resp
 
 
 # --------------------------------------------------------------------------- #
