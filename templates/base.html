@@ -40,5 +40,36 @@
 <footer class="footer">
   TeamBook · блокнот руководителя · данные хранятся на вашем сервере
 </footer>
+
+<script>
+/* Адаптивное расширение textarea по высоте содержимого (без полос прокрутки) */
+(function () {
+  function fit(el) {
+    if (!el || el.tagName !== 'TEXTAREA') return;
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+  }
+  function fitAll(scope) {
+    (scope || document).querySelectorAll('textarea').forEach(fit);
+  }
+  /* высота по содержимому сразу после рендера и при вводе (делегирование) */
+  document.addEventListener('input', function (e) {
+    if (e.target && e.target.tagName === 'TEXTAREA') fit(e.target);
+  });
+  /* подстраиваем при появлении новых textarea (спойлеры, динамика) */
+  var mo = new MutationObserver(function (mutations) {
+    mutations.forEach(function (m) {
+      m.addedNodes.forEach(function (n) {
+        if (n.nodeType === 1) {
+          if (n.tagName === 'TEXTAREA') fit(n);
+          else if (n.querySelectorAll) n.querySelectorAll('textarea').forEach(fit);
+        }
+      });
+    });
+  });
+  mo.observe(document.body, { childList: true, subtree: true });
+  fitAll();
+})();
+</script>
 </body>
 </html>
