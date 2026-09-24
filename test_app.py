@@ -584,6 +584,31 @@ h = r.get_data(as_text=True)
 check("в списке учёток кнопка «Сбросить пароль» и нет dropdown-имени",
       "Сбросить пароль" in h and "user-name" not in h)
 
+# === АУДИТ: ref и target заполняются, запись кликабельна ===
+before_emp = dbq("SELECT id, name FROM employees LIMIT 1")[0]
+c.post(f"/employee/{before_emp['id']}/notes", data={"notes": "для проверки ref/target"})
+with appmod.app.app_context():
+    row = dbq("SELECT ref, target FROM audit_log ORDER BY id DESC LIMIT 1")[0]
+    check("аудит: ref имеет вид «тип:eid»", row["ref"].startswith("notes:"))
+    check("аудит: target указывает на страницу сотрудника",
+          row["target"] and "/employee/%d" % before_emp["id"] in row["target"])
+r = c.get("/audit")
+h = r.get_data(as_text=True)
+check("в аудите запись-ссылка «→» на страницу изменения", "audit-link" in h and "→" in h)
+
+# === КАРТОЧКА: «кто последним редактировал» в блоках ===
+emp_for_edit = dbq("SELECT id, name FROM employees LIMIT 1")[0]
+e2id = emp_for_edit["id"]
+r = c.post(f"/employee/{e2id}/notes", data={"notes": "заметка для проверки редактора"})
+r = c.get(f"/employee/{e2id}")
+h = r.get_data(as_text=True)
+check("карточка: в блоках указан последний редактор (edit-by)",
+      "edit-by" in h and "последняя правка" in h)
+with appmod.app.app_context():
+    editors = appmod._last_block_editors(appmod.get_db(), e2id)
+    check("карточка: заметки привязаны к редактору admin",
+          editors.get("notes") == "admin")
+
 print()
 if failures:
     print(f"ИТОГ: {len(failures)} ПРОВАЛЕНО -> {failures}")

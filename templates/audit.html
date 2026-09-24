@@ -32,7 +32,13 @@
         <tr>
           <td class="sub">{{ (r.created_at or '')[:19] }}</td>
           <td>{{ r.username or '—' }}</td>
-          <td>{{ r.detail }}</td>
+          <td>
+            {% if r.target %}
+              <a href="{{ r.target }}" class="audit-link" title="Перейти к странице изменения">{{ r.detail }} →</a>
+            {% else %}
+              {{ r.detail }}
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>

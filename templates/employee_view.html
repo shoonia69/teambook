@@ -19,6 +19,7 @@
     {{ emp.position or '—' }}{% if emp.position and emp.department %} · {% endif %}{{ emp.department or '' }}
     {% if can_salary and emp.salary %} · <strong style="color:var(--text)">{{ emp.salary }}</strong>{% elif not can_salary %} · <span title="Зарплата скрыта">зарплата скрыта</span>{% endif %}
     {% if emp.hire_date %} · <span title="Дата приёма на работу">принят с {{ (emp.hire_date or '')[:10] }}</span>{% endif %}
+    {% if editors.get('employee') %}<span class="edit-by">изменено: {{ editors['employee'] }}</span>{% endif %}
   </div>
   {% if emp_tags %}
   <div class="emp-tags" style="margin-top:10px">
@@ -33,6 +34,7 @@
 <details class="card accordion" data-acc="history">
   <summary class="acc-summary"><span class="acc-title">История изменения должности и зарплаты</span>
     <span class="acc-count">{% if history %}· {{ history|length }} зап.{% endif %}</span>
+    {% if editors.get('history') %}<span class="edit-by">последняя правка: {{ editors['history'] }}</span>{% endif %}
     <span class="acc-toggle">свернуть/развернуть</span>
   </summary>
   <div class="acc-body">
@@ -138,6 +140,7 @@
 <!-- Случайные заметки о сотруднике -->
 <details class="card accordion" data-acc="notes" open>
   <summary class="acc-summary"><span class="acc-title">Заметки</span>
+    {% if editors.get('notes') %}<span class="edit-by">последняя правка: {{ editors['notes'] }}</span>{% endif %}
     <span class="acc-toggle">свернуть/развернуть</span>
   </summary>
   <div class="acc-body">
@@ -201,6 +204,7 @@
 {% else %}
 <details class="card accordion" data-acc="semesters">
   <summary class="acc-summary"><span class="acc-title">Полугодовые записи · {{ year }} год</span>
+    {% if editors.get('records') %}<span class="edit-by">последняя правка: {{ editors['records'] }}</span>{% endif %}
     <span class="acc-toggle">свернуть/развернуть</span>
   </summary>
   <div class="acc-body">
@@ -262,6 +266,7 @@
 <details class="card accordion" data-acc="problems">
   <summary class="acc-summary"><span class="acc-title">Проблемы в работе</span>
     <span class="acc-count">{% if problems %}· {{ problems|length }}{% endif %}</span>
+    {% if editors.get('problems') %}<span class="edit-by">последняя правка: {{ editors['problems'] }}</span>{% endif %}
     <span class="acc-toggle">свернуть/развернуть</span>
   </summary>
   <div class="acc-body">
@@ -306,6 +311,7 @@
 <details class="card accordion" data-acc="meetings">
   <summary class="acc-summary"><span class="acc-title">Встречи 1-на-1</span>
     <span class="acc-count">{% if meetings %}· {{ meetings|length }}{% endif %}</span>
+    {% if editors.get('meetings') %}<span class="edit-by">последняя правка: {{ editors['meetings'] }}</span>{% endif %}
     <span class="acc-toggle">свернуть/развернуть</span>
   </summary>
   <div class="acc-body">

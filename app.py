@@ -239,6 +239,8 @@ CREATE TABLE IF NOT EXISTS audit_log (
     user_id     INTEGER,
     action      TEXT,
     detail      TEXT,
+    ref         TEXT DEFAULT '',
+    target      TEXT DEFAULT '',
     created_at  TEXT DEFAULT (datetime('now'))
 );
 
@@ -287,6 +289,14 @@ def init_db():
     # таблицы (meetings, year_records) -> employees_old, которые после DROP битые.
     _repair_dangling_fk(db, "meetings", "employee_id")
     _repair_dangling_fk(db, "year_records", "employee_id")
+
+    # Миграция audit_log: колонки ref (для «кто последним редактировал блок») и
+    # target (для кликабельной записи → страница изменения).
+    acols = {r[1] for r in db.execute("PRAGMA table_info(audit_log)").fetchall()}
+    if "ref" not in acols:
+        db.execute("ALTER TABLE audit_log ADD COLUMN ref TEXT DEFAULT ''")
+    if "target" not in acols:
+        db.execute("ALTER TABLE audit_log ADD COLUMN target TEXT DEFAULT ''")
 
     # Миграция авторизации: если учётных записей нет — создать владельца.
     if not db.execute("SELECT 1 FROM users LIMIT 1").fetchone():
@@ -477,10 +487,11 @@ def _clear_stale(now):
             del _failed[ip]
 
 
-def _audit(db, user_id, action, detail=""):
+def _audit(db, user_id, action, detail="", ref="", target=""):
     try:
-        db.execute("INSERT INTO audit_log (user_id, action, detail) VALUES (?,?,?)",
-                   (user_id, action, str(detail)[:500]))
+        db.execute(
+            "INSERT INTO audit_log (user_id, action, detail, ref, target) VALUES (?,?,?,?,?)",
+            (user_id, action, str(detail)[:500], ref or "", target or ""))
     except Exception:
         pass
 
@@ -532,11 +543,115 @@ def _audit_after(resp):
     try:
         db = get_db()
         detail = _audit_resolve_names(db, detail, request.view_args or {})
-        _audit(db, session["uid"], "write", detail)
+        ref, target = _audit_ctx(db, ep, request.view_args or {})
+        _audit(db, session["uid"], "write", detail, ref=ref, target=target)
         db.commit()
     except Exception:
         pass
     return resp
+
+
+# ref-префиксы блоков карточки сотрудника: тип -> базовая таблица для поиска employee_id
+_AUDIT_BLOCK = {
+    "employee_notes":     ("notes",     None),
+    "history_add":        ("history",   None),
+    "history_edit":       ("history",   "employee_history"),
+    "history_delete":     ("history",   "employee_history"),
+    "meeting_new":        ("meetings",  None),
+    "meeting_edit":       ("meetings",  "meetings"),
+    "meeting_delete":     ("meetings",  "meetings"),
+    "problem_add":        ("problems",  None),
+    "problem_delete":     ("problems",  "problems"),
+    "problem_add_general":("problems_pool", None),
+    "record_save":        ("records",   None),
+    "record_delete":      ("records",   "year_records"),
+    "employee_year_new":  ("records",   None),
+    "employee_year_delete":("records",  None),
+    "employee_edit":      ("employee",  None),
+}
+
+# target-страницы для кликабельных записей аудита
+_AUDIT_TARGET = {
+    "employee_edit":       "employee_view",
+    "employee_notes":      "employee_view",
+    "history_add":         "employee_view",
+    "history_edit":        "employee_view",
+    "history_delete":      "employee_view",
+    "meeting_new":         "employee_view",
+    "meeting_edit":        "employee_view",
+    "meeting_delete":      "employee_view",
+    "problem_add":         "employee_view",
+    "problem_delete":      "employee_view",
+    "problem_add_general": "problems_page",
+    "record_save":         "employee_view",
+    "record_delete":       "employee_view",
+    "employee_year_new":   "employee_view",
+    "employee_year_delete":"employee_view",
+    "employee_new":        "index",
+    "catalog_add":         "catalogs",
+    "catalog_rename":      "catalogs",
+    "catalog_delete":      "catalogs",
+    "user_new":            "users_page",
+    "user_edit":           "users_page",
+    "user_password":       "users_page",
+    "user_delete":         "users_page",
+    "my_password":         "index",
+    "template_delete":     "users_page",
+    "user_save_template":  "users_page",
+    "user_apply_template": "users_page",
+}
+
+
+def _audit_ctx(db, ep, view_args):
+    """Вернуть (ref, target_url) для записи аудита.
+
+    ref — ключ блока сотрудника ('history:12', 'notes:12', 'records:12', ...)
+    для показа «кто последним редактировал блок»; '' если не применимо.
+    target_url — абсолютный путь страницы, куда вести клик по записи.
+    """
+    eid = view_args.get("eid")
+    kind = None
+    block = _AUDIT_BLOCK.get(ep)
+    if block:
+        kind, lookup = block
+        if eid is None and lookup:
+            row = db.execute("SELECT employee_id FROM %s WHERE id=?" % lookup,
+                             (view_args.get("hid") or view_args.get("mid")
+                              or view_args.get("pid") or view_args.get("rid"),)).fetchone()
+            eid = row["employee_id"] if row else None
+    ref = ("%s:%s" % (kind, eid)) if (kind and eid) else (kind or "")
+    # целевая страница клика
+    tgt = _AUDIT_TARGET.get(ep, "")
+    url = ""
+    try:
+        if not tgt:
+            url = ""
+        elif tgt == "employee_view" and eid:
+            url = url_for("employee_view", eid=eid)
+        else:
+            url = url_for(tgt)
+    except Exception:
+        url = ""
+    return ref, url
+
+
+def _last_block_editors(db, eid):
+    """Кто последним редактировал каждый блок карточки сотрудника.
+
+    Возвращает dict {тип_блока: username}. Берём самую свежую запись аудита
+    с ref 'тип:eid' по каждому типу блока.
+    """
+    kinds = ("employee", "notes", "history", "records", "meetings", "problems")
+    result = {}
+    for kind in kinds:
+        row = db.execute(
+            """SELECT u.username, a.created_at
+               FROM audit_log a LEFT JOIN users u ON u.id=a.user_id
+               WHERE a.ref=? ORDER BY a.id DESC LIMIT 1""",
+            ("%s:%s" % (kind, eid),)).fetchone()
+        if row and row["username"]:
+            result[kind] = row["username"]
+    return result
 
 
 def _resolve_name(db, table, cid, column="name"):
@@ -1020,6 +1135,9 @@ def employee_view(eid):
     ).fetchall()
     positions, _ = _cat_options(db)
 
+    # Кто последним редактировал каждый блок карточки (по журналу аудита)
+    editors = _last_block_editors(db, eid)
+
     return render_template(
         "employee_view.html",
         emp=emp,
@@ -1034,6 +1152,7 @@ def employee_view(eid):
         problems=problems,
         now_year=datetime.now().year,
         can_salary=can(session["uid"], "view_salary"),
+        editors=editors,
     )
 
 

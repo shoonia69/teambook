@@ -161,6 +161,14 @@ a.view { color: var(--accent2); font-weight: 500; }
 }
 .user-menu.open .user-menu-dropdown { display: block; }
 
+/* ---------- «кто последним редактировал» и кликабельный аудит ---------- */
+.edit-by {
+  color: var(--muted); font-size: 12px; margin-left: 8px;
+  white-space: nowrap;
+}
+.audit-link { color: var(--accent); text-decoration: none; }
+.audit-link:hover { text-decoration: underline; }
+
 /* ---------- проблемы ---------- */
 .problem-add { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
 .problem-add textarea { width: 100%; margin-bottom: 8px; }
