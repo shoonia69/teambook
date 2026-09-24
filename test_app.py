@@ -560,6 +560,30 @@ check("шаблон применён к зрителю (появилось edit_
 c.post(f"/templates/{tpl[0]['id']}/delete", data={})
 check("шаблон удалён", len(dbq("SELECT * FROM role_templates WHERE name='Шаблон тимлида'")) == 0)
 
+# === АУДИТ: id подменяется на имена ===
+emp = dbq("SELECT id, name FROM employees LIMIT 1")[0]
+emp_id, emp_name = emp["id"], emp["name"]
+with appmod.app.app_context():
+    d = appmod._audit_resolve_names(appmod.get_db(), "Изменил сотрудника %d" % emp_id, {"eid": emp_id})
+    check("аудит: eid подменяется на имя сотрудника", emp_name in d)
+    uid = dbq("SELECT id FROM users WHERE username='admin'")[0]["id"]
+    d = appmod._audit_resolve_names(appmod.get_db(), "Сбросил пароль учётной записи %d" % uid, {"uid": uid})
+    check("аудит: uid подменяется на имя учётки", "admin" in d)
+    d = appmod._audit_resolve_names(appmod.get_db(), "Удалил сотрудника 999999", {"eid": 999999})
+    check("аудит: отсутствующий сотрудник → #id", "#999999" in d)
+
+# === UI: выпадающее меню в шапке (Сменить пароль), а не отдельная кнопка ===
+r = c.get("/", follow_redirects=True)
+h = r.get_data(as_text=True)
+check("в шапке dropdown с «Сменить пароль» и «Выйти»",
+      "user-menu-dropdown" in h and "Сменить пароль" in h and "Выйти" in h)
+check("отдельной кнопки «Пароль» в шапке больше нет",
+      ">Пароль<" not in h)
+r = c.get("/users")
+h = r.get_data(as_text=True)
+check("в списке учёток кнопка «Сбросить пароль» и нет dropdown-имени",
+      "Сбросить пароль" in h and "user-name" not in h)
+
 print()
 if failures:
     print(f"ИТОГ: {len(failures)} ПРОВАЛЕНО -> {failures}")

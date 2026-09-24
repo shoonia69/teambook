@@ -28,34 +28,31 @@
 {% for u in users %}
 <div class="card" style="margin-bottom:12px">
   <div class="toolbar" style="margin-bottom:6px">
-    <a class="emp-link user-name" href="#" data-uid="{{ u.id }}"
-       onclick="document.getElementById('ud-{{ u.id }}').classList.toggle('open');return false;">
-      <strong>{{ u.username }}</strong>
-    </a>
+    <strong>{{ u.username }}</strong>
     <span class="tag-chip" style="--c:#5B8DEF">{{ ROLE_LABELS.get(u.role, u.role) }}</span>
     {% if not u.is_active %}<span class="tag-chip" style="--c:#C44536">заблокирован</span>{% endif %}
     <span class="sub" style="margin-left:6px">last login: {{ (u.last_login or '—')[:16] }}</span>
     <div class="spacer"></div>
     <a class="btn small" href="{{ url_for('user_edit', uid=u.id) }}">Права</a>
+    {% if u.role != 'owner' %}
+      <a class="btn small" href="#" data-pw="{{ u.id }}"
+         onclick="var f=document.getElementById('pwf-{{ u.id }}');f.style.display=f.style.display==='none'?'flex':'none';return false;">Сбросить пароль</a>
+      <form method="post" action="{{ url_for('user_delete', uid=u.id) }}"
+            onsubmit="return confirm('Удалить «{{ u.username }}»? Все его права и связи будут удалены.')">
+        <button class="btn small danger" type="submit">Удалить</button>
+      </form>
+    {% endif %}
   </div>
   <div class="sub">
     {% if u.s_cnt and not (u.s_names) %}Все отделы{% elif u.s_names %}{{ u.s_names }}{% else %}Нет области{% endif %}
   </div>
-
   {% if u.role != 'owner' %}
-  <div class="user-dropdown" id="ud-{{ u.id }}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
-    <div class="filter-row" style="gap:8px;flex-wrap:wrap">
-      <form method="post" action="{{ url_for('user_password', uid=u.id) }}"
-            style="display:flex;gap:8px"
-            onsubmit="var p=this.querySelector('[name=password]');if(!p.value||p.value.length<6){alert('Пароль минимум 6 символов');return false;}return confirm('Сменить пароль у «{{ u.username }}»?')">
-        <input type="text" name="password" placeholder="Новый пароль для {{ u.username }}" style="max-width:240px">
-        <button class="btn small" type="submit">Сменить пароль</button>
-      </form>
-      <form method="post" action="{{ url_for('user_delete', uid=u.id) }}"
-            onsubmit="return confirm('Удалить «{{ u.username }}»? Все его права и связи будут удалены.')" style="margin-left:auto">
-        <button class="btn small danger" type="submit">Удалить</button>
-      </form>
-    </div>
+  <div class="filter-row" id="pwf-{{ u.id }}" style="display:none;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+    <form method="post" action="{{ url_for('user_password', uid=u.id) }}" style="display:flex;gap:8px"
+          onsubmit="var p=this.querySelector('[name=password]');if(!p.value||p.value.length<6){alert('Пароль минимум 6 символов');return false;}return confirm('Сменить пароль у «{{ u.username }}»?')">
+      <input type="text" name="password" placeholder="Новый пароль для {{ u.username }}" style="max-width:240px">
+      <button class="btn small" type="submit">Сменить пароль</button>
+    </form>
   </div>
   {% endif %}
 </div>

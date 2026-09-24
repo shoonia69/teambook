@@ -22,9 +22,16 @@
   </nav>
   <div class="user-area">
     {% if session.get('authed') %}
-      <span class="sub" style="margin-right:8px">{{ session.get('username', '') }}</span>
-      <a class="logout" href="{{ url_for('my_password') }}">Пароль</a>
-      <a class="logout" href="{{ url_for('logout') }}">Выйти</a>
+      <div class="user-menu">
+        <button class="user-menu-btn" type="button"
+                onclick="document.querySelector('.user-menu').classList.toggle('open')">
+          {{ session.get('username', '') }} <span class="caret">▾</span>
+        </button>
+        <div class="user-menu-dropdown">
+          <a href="{{ url_for('my_password') }}">Сменить пароль</a>
+          <a href="{{ url_for('logout') }}">Выйти</a>
+        </div>
+      </div>
     {% endif %}
   </div>
 </header>
@@ -75,6 +82,12 @@
   mo.observe(document.body, { childList: true, subtree: true });
   fitAll();
 })();
+/* закрывать выпадающее меню пользователя при клике вне его */
+document.addEventListener('click', function (e) {
+  var menu = document.querySelector('.user-menu');
+  if (!menu) return;
+  if (!menu.contains(e.target)) menu.classList.remove('open');
+});
 </script>
 </body>
 </html>

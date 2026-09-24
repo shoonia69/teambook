@@ -531,11 +531,52 @@ def _audit_after(resp):
         detail = label
     try:
         db = get_db()
+        detail = _audit_resolve_names(db, detail, request.view_args or {})
         _audit(db, session["uid"], "write", detail)
         db.commit()
     except Exception:
         pass
     return resp
+
+
+def _resolve_name(db, table, cid, column="name"):
+    """Вернуть имя строки таблицы по id или '#'+id, если она не найдена."""
+    row = db.execute("SELECT %s AS n FROM %s WHERE id=?" % (column, table),
+                     (cid,)).fetchone()
+    if row and row["n"]:
+        return str(row["n"])
+    return "#%s" % cid
+
+
+def _audit_resolve_names(db, detail, view_args):
+    """Заменить в детали аудита id сотрудника/учётки/записи на имена.
+
+    В детали встречаются токены вида '{eid}', '{uid}', '{rid}', '{hid}',
+    '{mid}', '{pid}' — подставляем человекочитаемые имена, а не голые id.
+    """
+    if "eid" in view_args:
+        detail = detail.replace(str(view_args["eid"]),
+                                _resolve_name(db, "employees", view_args["eid"]))
+    if "uid" in view_args:
+        detail = detail.replace(str(view_args["uid"]),
+                                _resolve_name(db, "users", view_args["uid"], "username"))
+    emap = {  # запись -> таблица, через которую ищем сотрудника
+        "rid": "year_records",
+        "hid": "employee_history",
+        "mid": "meetings",
+        "pid": "problems",
+    }
+    for key, table in emap.items():
+        if key not in view_args:
+            continue
+        cid = view_args[key]
+        row = db.execute("SELECT employee_id FROM %s WHERE id=?" % table, (cid,)).fetchone()
+        if row:
+            emp = _resolve_name(db, "employees", row["employee_id"])
+            detail = detail.replace(str(cid), "%s (%s)" % (cid, emp))
+        else:
+            detail = detail.replace(str(cid), "#%s" % cid)
+    return detail
 
 
 def login_required(f):
