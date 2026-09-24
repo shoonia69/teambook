@@ -456,6 +456,24 @@ check("зритель не видит общий список проблем", r
 r = c.get("/users")
 check("зритель не видит пользователей", r.status_code != 200)
 
+# === РЕГРЕССИЯ: редактирование пользователя не должно снимать флаг «активен» ===
+# владелец правит тимлида, не меняя признак активности, — он должен остаться активным
+c.get("/logout")
+c.post("/login", data={"password": "test-pass-123"})
+tl_id = dbq("SELECT id FROM users WHERE username='teamlead1'")[0]["id"]
+r = c.get(f"/users/{tl_id}/edit")
+check("страница редактирования пользователя показывает чекбокс активности",
+      "is_active" in r.get_data(as_text=True))
+# сохранить: роль teamlead, отдел d1, отметить активность
+c.post(f"/users/{tl_id}/edit", data={
+    "role": "teamlead", "is_active": "1", "departments": [str(d1)], "scope_all": "",
+})
+tl_after = dbq("SELECT is_active FROM users WHERE username='teamlead1'")[0]["is_active"]
+check("после редактирования пользователь остался активным (is_active=1)", tl_after == 1)
+# новый пользователь по умолчанию активен
+nu = dbq("SELECT is_active FROM users WHERE username='viewer1'")[0]["is_active"]
+check("созданный пользователь активен по умолчанию", nu == 1)
+
 print()
 if failures:
     print(f"ИТОГ: {len(failures)} ПРОВАЛЕНО -> {failures}")

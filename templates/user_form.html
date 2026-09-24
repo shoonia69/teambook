@@ -26,6 +26,15 @@
       </div>
       {% endif %}
     </div>
+    {% if user.id %}
+    <div style="margin-top:10px">
+      <label class="tag-option">
+        <input type="checkbox" name="is_active" value="1"
+               {{ 'checked' if user.is_active }}>
+        Пользователь активен (может входить)
+      </label>
+    </div>
+    {% endif %}
 
     <div class="panel-title" style="margin-top:18px">Область видимости — каких сотрудников видит</div>
     <label class="tag-option" style="margin-bottom:8px">
