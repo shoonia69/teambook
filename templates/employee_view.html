@@ -28,6 +28,38 @@
     {% endfor %}
   </div>
   {% endif %}
+
+  <!-- Личное пространство: выбор слоя -->
+  <div class="filter-row" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);gap:8px;flex-wrap:wrap">
+    {% if space_list|length > 1 %}
+    <span class="sub" style="margin:0">Пространство:</span>
+    <form method="get" action="{{ url_for('employee_view', eid=emp.id) }}" style="display:flex;gap:8px;margin:0">
+      <select name="space" onchange="this.form.submit()">
+        {% for s in space_list %}
+          <option value="{{ s.id }}" {{ 'selected' if s.id == space }}>{{ s.username }}{{ ' (владелец)' if s.role == 'owner' else '' }}</option>
+        {% endfor %}
+      </select>
+      {% if year %}<input type="hidden" name="year" value="{{ year }}">{% endif %}
+    </form>
+    {% endif %}
+    {% if own %}
+    <details class="space-share" style="margin-left:4px">
+      <summary class="btn small" style="cursor:pointer">🔓 Открыть доступ</summary>
+      <div style="margin-top:8px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--panel2);max-width:340px">
+        <div class="sub" style="margin-bottom:6px">Открыть доступ к своему пространству другому пользователю (тимлиду/руководителю).</div>
+        <form method="post" action="{{ url_for('space_share') }}" style="display:flex;gap:8px;flex-wrap:wrap">
+          <select name="viewer_id" style="min-width:160px">
+            {% for v in cand_viewers %}
+              <option value="{{ v.id }}">{{ v.username }} ({{ ROLE_LABELS.get(v.role, v.role) }})</option>
+            {% endfor %}
+          </select>
+          <button class="btn small primary" type="submit" name="action" value="grant">Открыть</button>
+          <button class="btn small danger" type="submit" name="action" value="revoke">Забрать</button>
+        </form>
+      </div>
+    </details>
+    {% endif %}
+  </div>
 </div>
 
 <!-- История изменений должности/зарплаты -->
@@ -38,7 +70,7 @@
     <span class="acc-toggle">свернуть/развернуть</span>
   </summary>
   <div class="acc-body">
-  {% if 'manage_history' in perms %}
+  {% if 'manage_history' in perms and own %}
   <div class="toolbar" style="margin-bottom:8px">
     <div class="spacer"></div>
     <details class="inline-add">
@@ -82,7 +114,7 @@
       <div class="semester-block" style="margin-bottom:12px">
         <div class="semester-title">
           <strong>{{ (h.change_date or '')[:10] }}</strong>
-          {% if 'manage_history' in perms %}
+          {% if 'manage_history' in perms and own %}
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <details class="inline-edit">
               <summary class="btn small" style="cursor:pointer">Правка</summary>
@@ -145,15 +177,15 @@
   </summary>
   <div class="acc-body">
   <form method="post" action="{{ url_for('employee_notes', eid=emp.id) }}">
-    {% if 'edit_employee' in perms %}
+    {% if 'edit_employee' in perms and own %}
     <div class="toolbar" style="margin-bottom:8px">
       <div class="spacer"></div>
       <button class="btn small primary" type="submit">Сохранить</button>
     </div>
     {% endif %}
     <textarea name="notes" style="min-height:110px"
-              {% if 'edit_employee' not in perms %}readonly{% endif %}
-              placeholder="Случайные заметки о сотруднике: черты характера, пожелания по развитию, подвижки, что угодно вне привязки к полугодию.">{{ emp.notes or '' }}</textarea>
+              {% if not ('edit_employee' in perms and own) %}readonly{% endif %}
+              placeholder="Случайные заметки о сотруднике: черты характера, пожелания по развитию, подвижки, что угодно вне привязки к полугодию.">{{ emp_notes }}</textarea>
   </form>
   </div>
 </details>
@@ -171,7 +203,7 @@
     {% endfor %}
   </div>
   <div class="spacer"></div>
-  {% if 'manage_semesters' in perms %}
+  {% if 'manage_semesters' in perms and own %}
   <form method="post" action="{{ url_for('employee_year_new', eid=emp.id) }}" class="filter-row" style="margin:0">
     <label class="filter-label" for="new-year" style="margin:0">Создать год:</label>
     <input type="number" id="new-year" name="year" min="1990" max="2100"
@@ -179,7 +211,7 @@
     <button class="btn small primary" type="submit">Создать</button>
   </form>
   {% endif %}
-  {% if year in years and 'manage_semesters' in perms %}
+  {% if year in years and 'manage_semesters' in perms and own %}
   <form method="post" action="{{ url_for('employee_year_delete', eid=emp.id) }}" style="margin:0"
         onsubmit="return confirm('Удалить {{ year }} год и все записи за него? Это действие необратимо.')">
     <input type="hidden" name="year" value="{{ year }}">
@@ -226,30 +258,30 @@
           <div class="semester-fields">
             <div class="sfield">
               <div class="field-label">Цели сотрудника</div>
-              <textarea name="goals_employee" {% if 'manage_semesters' not in perms %}readonly{% endif %} placeholder="Какие цели ставил инженер на это полугодие">{{ (rec.goals_employee if rec else '') }}</textarea>
+              <textarea name="goals_employee" {% if not ('manage_semesters' in perms and own) %}readonly{% endif %} placeholder="Какие цели ставил инженер на это полугодие">{{ (rec.goals_employee if rec else '') }}</textarea>
             </div>
 
             <div class="sfield">
               <div class="field-label">Мои предложения</div>
-              <textarea name="proposals_manager" {% if 'manage_semesters' not in perms %}readonly{% endif %} placeholder="Что я предложил / поставил как руководитель">{{ (rec.proposals_manager if rec else '') }}</textarea>
+              <textarea name="proposals_manager" {% if not ('manage_semesters' in perms and own) %}readonly{% endif %} placeholder="Что я предложил / поставил как руководитель">{{ (rec.proposals_manager if rec else '') }}</textarea>
             </div>
 
             <div class="sfield">
               <div class="field-label">Пожелания сотрудника</div>
-              <textarea name="wishes_employee" {% if 'manage_semesters' not in perms %}readonly{% endif %} placeholder="Его пожелания, запросы, ожидания">{{ (rec.wishes_employee if rec else '') }}</textarea>
+              <textarea name="wishes_employee" {% if not ('manage_semesters' in perms and own) %}readonly{% endif %} placeholder="Его пожелания, запросы, ожидания">{{ (rec.wishes_employee if rec else '') }}</textarea>
             </div>
 
             <div class="sfield">
               <div class="field-label">Мои комментарии</div>
-              <textarea name="comments" {% if 'manage_semesters' not in perms %}readonly{% endif %} placeholder="Комментарии, наблюдения, оценка">{{ (rec.comments if rec else '') }}</textarea>
+              <textarea name="comments" {% if not ('manage_semesters' in perms and own) %}readonly{% endif %} placeholder="Комментарии, наблюдения, оценка">{{ (rec.comments if rec else '') }}</textarea>
             </div>
 
             <div class="sfield">
               <div class="field-label">Отзывы коллег</div>
-              <textarea name="colleagues_feedback" {% if 'manage_semesters' not in perms %}readonly{% endif %} placeholder="Отзывы, впечатления, мнения коллег о сотруднике">{{ (rec.colleagues_feedback if rec else '') }}</textarea>
+              <textarea name="colleagues_feedback" {% if not ('manage_semesters' in perms and own) %}readonly{% endif %} placeholder="Отзывы, впечатления, мнения коллег о сотруднике">{{ (rec.colleagues_feedback if rec else '') }}</textarea>
             </div>
           </div>
-          {% if 'manage_semesters' in perms %}
+          {% if 'manage_semesters' in perms and own %}
           <div class="btn-row">
             <button class="btn primary" type="submit">Сохранить</button>
           </div>
@@ -279,7 +311,7 @@
       <div class="semester-block" style="margin-bottom:12px">
         <div class="semester-title">
           <span style="color:var(--danger);font-weight:600">⚠</span>
-          {% if 'manage_problems' in perms %}
+          {% if 'manage_problems' in perms and own %}
           <div style="display:flex;gap:8px;margin-left:auto">
             <form method="post" action="{{ url_for('problem_delete', pid=p.id) }}"
                   onsubmit="return confirm('Удалить проблему?')">
@@ -295,7 +327,7 @@
     <div class="empty">Проблем нет — отлично!</div>
   {% endif %}
 
-  {% if 'manage_problems' in perms %}
+  {% if 'manage_problems' in perms and own %}
   <form method="post" action="{{ url_for('problem_add', eid=emp.id) }}" class="problem-add">
     <textarea name="text" placeholder="Записать новую проблему в работе сотрудника..." required
               style="min-height:60px"></textarea>
@@ -315,7 +347,7 @@
     <span class="acc-toggle">свернуть/развернуть</span>
   </summary>
   <div class="acc-body">
-  {% if 'manage_meetings' in perms %}
+  {% if 'manage_meetings' in perms and own %}
   <div class="toolbar" style="margin-bottom:8px">
     <div class="spacer"></div>
     <a class="btn small" href="{{ url_for('meeting_new', eid=emp.id) }}">+ Новая встреча</a>
@@ -327,7 +359,7 @@
       <div class="semester-block" style="margin-bottom:12px">
         <div class="semester-title">
           <strong>{{ (mt.date or '')[:10] }}</strong>
-          {% if 'manage_meetings' in perms %}
+          {% if 'manage_meetings' in perms and own %}
           <div style="display:flex;gap:8px">
             <a class="btn small" href="{{ url_for('meeting_edit', mid=mt.id) }}">Правка</a>
             <form method="post" action="{{ url_for('meeting_delete', mid=mt.id) }}"

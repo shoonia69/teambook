@@ -418,6 +418,9 @@ c.post("/employee/new", data={
 petr_id = dbq("SELECT id FROM employees WHERE name='Петров Пётр'")[0]["id"]
 c.post(f"/employee/{petr_id}/problem/add", data={"text": "Проблема из чужой группы"},
        follow_redirects=True)
+# владелец открывает доступ к своему личному слою тимлиду (иначе тот слоя не увидит)
+tl_id = dbq("SELECT id FROM users WHERE username='teamlead1'")[0]["id"]
+c.post("/space/share", data={"viewer_id": tl_id, "action": "grant"}, follow_redirects=True)
 
 # --- вход тимлида ---
 c.get("/logout")
@@ -608,6 +611,68 @@ with appmod.app.app_context():
     editors = appmod._last_block_editors(appmod.get_db(), e2id)
     check("карточка: заметки привязаны к редактору admin",
           editors.get("notes") == "admin")
+
+# === ЛИЧНЫЕ ПРОСТРАНСТВА: слои, приватность, открытие доступа ===
+c.get("/logout")
+c.post("/login", data={"username": "admin", "password": "test-pass-123"})
+tl2 = dbq("SELECT id FROM users WHERE username='teamlead1'")[0]["id"]
+admin_id = dbq("SELECT id FROM users WHERE username='admin' AND role='owner'")[0]["id"]
+# отозвать любой ранее выданный доступ (для чистоты проверок)
+c.post("/space/share", data={"viewer_id": tl2, "action": "revoke"}, follow_redirects=True)
+# владелец пишет заметку сотруднику в СВОЙ слой
+eid_l = dbq("SELECT id FROM employees LIMIT 1")[0]["id"]
+c.post(f"/employee/{eid_l}/notes", data={"notes": "заметка слоя админа"})
+# тимлид: чужого слоя не видит (строгая приватность)
+c.get("/logout")
+c.post("/login", data={"username": "teamlead1", "password": "tl-pass"})
+r = c.get(f"/employee/{eid_l}")
+h = r.get_data(as_text=True)
+check("тимлид НЕ видит заметку чужого слоя (администратора)", "заметка слоя админа" not in h)
+# тимлид пишет в свой слой; переключатель слоёв: виден только свой (до открытия доступа)
+c.post(f"/employee/{eid_l}/notes", data={"notes": "заметка слоя тимлида"})
+r = c.get(f"/employee/{eid_l}")
+h = r.get_data(as_text=True)
+check("тимлид видит свою заметку", "заметка слоя тимлида" in h)
+check("переключатель слоёв: у тимлида виден только свой слой (без админа)",
+      'name="space"' not in h)
+# тимлид пишет в свой слой (запись пойдёт в его личный слой, не в слой админа)
+r = c.post(f"/employee/{eid_l}/history/add",
+           data={"change_date": "2026-01-01", "note": "правка тимлида"})
+check("тимлид пишет в свой слой: история сохранена (свой слой)",
+      r.status_code == 302)
+# владелец открывает доступ тимлиду -> тимлид видит слой админа (просмотр) + переключатель
+c.get("/logout")
+c.post("/login", data={"username": "admin", "password": "test-pass-123"})
+c.post("/space/share", data={"viewer_id": tl2, "action": "grant"}, follow_redirects=True)
+c.get("/logout")
+c.post("/login", data={"username": "teamlead1", "password": "tl-pass"})
+r = c.get(f"/employee/{eid_l}?space={admin_id}")  # явно смотрим слой админа
+h = r.get_data(as_text=True)
+check("после открытия доступа тимлид видит заметку слоя админа",
+      "заметка слоя админа" in h)
+r = c.get(f"/employee/{eid_l}")
+h = r.get_data(as_text=True)
+check("после открытия доступа появляется переключатель слоёв",
+      'name="space"' in h)
+# но править чужой слой всё равно нельзя: редактирование заметки сохранится в ЕГО слой
+c.post(f"/employee/{eid_l}/notes", data={"notes": "я пишу в свой слой"})
+r = c.get(f"/employee/{eid_l}")  # его слой по умолчанию
+check("правка тимлида ушла в его слой, слой админа не тронут",
+      "я пишу в свой слой" in r.get_data(as_text=True))
+# забрать доступ -> тимлид больше не видит чужой слой
+c.get("/logout")
+c.post("/login", data={"username": "admin", "password": "test-pass-123"})
+c.post("/space/share", data={"viewer_id": tl2, "action": "revoke"}, follow_redirects=True)
+c.get("/logout")
+c.post("/login", data={"username": "teamlead1", "password": "tl-pass"})
+r = c.get(f"/employee/{eid_l}?space={admin_id}")
+h = r.get_data(as_text=True)
+check("после отзыва доступа тимлид НЕ видит слой админа: возвращён его слой",
+      "заметка слоя админа" not in h)
+r = c.get(f"/employee/{eid_l}")
+h = r.get_data(as_text=True)
+check("после отзыва доступа переключатель слоёв пропал",
+      'name="space"' not in h)
 
 print()
 if failures:
