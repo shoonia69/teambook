@@ -221,6 +221,12 @@ CREATE TABLE IF NOT EXISTS user_permissions (
     PRIMARY KEY (user_id, perm)
 );
 
+CREATE TABLE IF NOT EXISTS user_permission_denied (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    perm    TEXT NOT NULL,
+    PRIMARY KEY (user_id, perm)
+);
+
 CREATE TABLE IF NOT EXISTS user_scope (
     user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     department_id INTEGER,
@@ -488,7 +494,9 @@ def current_user():
 
 
 def user_perms(uid):
-    """Множество прав пользователя (роль + индивидуальные флаги)."""
+    """Множество прав пользователя: (права роли ∪ индивидуальные) − снятые.
+
+    Позволяет гибко отзывать ролевые права и добавлять любые дополнительные."""
     db = get_db()
     row = db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
     if not row:
@@ -496,7 +504,9 @@ def user_perms(uid):
     base = set(ROLE_PRESETS.get(row["role"], {}).get("perms", set()))
     granted = {r["perm"] for r in db.execute(
         "SELECT perm FROM user_permissions WHERE user_id=?", (uid,))}
-    return base | granted
+    denied = {r["perm"] for r in db.execute(
+        "SELECT perm FROM user_permission_denied WHERE user_id=?", (uid,))}
+    return (base | granted) - denied
 
 
 def user_scope(uid):
@@ -1159,25 +1169,29 @@ def meeting_delete(mid):
 @app.route("/problems")
 @login_required
 def problems_page():
-    """Общий список: сотрудники, у которых есть зафиксированные проблемы."""
+    """Общий список: сотрудники, у которых есть зафиксированные проблемы.
+
+    Право view_problems_pool = видеть проблемы ВСЕХ команд (без ограничения по
+    отделам). Без него пользователь видит только проблемы в своей области."""
     if not can(session["uid"], "view_problems_pool"):
         abort(403)
     db = get_db()
-    # ограничить по области видимости пользователя
-    sc_sql, sc_params = scope_filter(db, session["uid"], "e")
+    # «по всем командам» — без скоупа; иначе — только свои отделы
+    all_mode = can(session["uid"], "view_problems_pool")
+    sc_sql, sc_params = ("1=1", []) if all_mode else scope_filter(db, session["uid"], "e")
     rows = db.execute(
         f"""SELECT e.id AS eid, e.name AS name, p.id AS pid, p.text AS text, p.created_at
-           FROM problems p
-           JOIN employees e ON e.id = p.employee_id
-           WHERE {sc_sql}
-           ORDER BY e.name COLLATE NOCASE, p.id DESC""",
+          FROM problems p
+          JOIN employees e ON e.id = p.employee_id
+          WHERE {sc_sql}
+          ORDER BY e.name COLLATE NOCASE, p.id DESC""",
         sc_params,
     ).fetchall()
     # сгруппировать по сотруднику
     by_emp = {}
     for r in rows:
         by_emp.setdefault(r["eid"], {"name": r["name"], "problems": []})["problems"].append(r)
-    sc_sql2, sc_params2 = scope_filter(db, session["uid"])  # без alias (таблица без префикса)
+    sc_sql2, sc_params2 = ("1=1", []) if all_mode else scope_filter(db, session["uid"])
     employees = db.execute(
         f"SELECT id, name FROM employees WHERE {sc_sql2} ORDER BY name COLLATE NOCASE",
         sc_params2,
@@ -1280,7 +1294,7 @@ def user_new():
                     "INSERT INTO users (username, password_hash, role) VALUES (?,?,?)",
                     (username, generate_password_hash(password), role))
                 uid = cur.lastrowid
-                _save_user_rights(db, uid, request.form)
+                _save_user_rights(db, uid, request.form, role, default_to_role=True)
                 db.commit()
                 flash(f"Пользователь «{username}» создан", "ok")
                 return redirect(url_for("users_page"))
@@ -1312,7 +1326,7 @@ def user_edit(uid):
         else:
             db.execute("UPDATE users SET role=?, is_active=? WHERE id=?",
                        (role, is_active, uid))
-            _save_user_rights(db, uid, request.form)
+            _save_user_rights(db, uid, request.form, role)
             db.commit()
             flash("Права обновлены", "ok")
             return redirect(url_for("users_page"))
@@ -1323,15 +1337,30 @@ def user_edit(uid):
                            scope_all=scope["all"])
 
 
-def _save_user_rights(db, uid, form):
-    """Записать скоуп и дополнительные права пользователя из формы."""
+def _save_user_rights(db, uid, form, role, default_to_role=False):
+    """Записать права пользователя из формы.
+
+    Форма шлёт ПОЛНЫЙ список отмеченных прав ('perms'). Вычисляем индивидуальные
+    дополнения ('user_permissions') и снятия ролевых прав ('user_permission_denied').
+    Это даёт максимально гибкую настройку: любую галку можно и поставить, и снять.
+    default_to_role=True — при создании пользователя без явного выбора даётся
+    полный пресет роли (ничего не снято)."""
+    base = set(ROLE_PRESETS.get(role, {}).get("perms", set()))
+    chosen = {p for p in form.getlist("perms") if p in PERMISSIONS}
+    if default_to_role and not form.getlist("perms"):
+        chosen = base
+
     db.execute("DELETE FROM user_permissions WHERE user_id=?", (uid,))
+    db.execute("DELETE FROM user_permission_denied WHERE user_id=?", (uid,))
     db.execute("DELETE FROM user_scope WHERE user_id=?", (uid,))
-    # индивидуально включённые права
-    for perm in form.getlist("perms"):
-        if perm in PERMISSIONS:
-            db.execute("INSERT OR IGNORE INTO user_permissions (user_id, perm) VALUES (?,?)",
-                       (uid, perm))
+    # добавленные права, которых нет в роли
+    for perm in chosen - base:
+        db.execute("INSERT OR IGNORE INTO user_permissions (user_id, perm) VALUES (?,?)",
+                   (uid, perm))
+    # снятые права, которые даёт роль
+    for perm in base - chosen:
+        db.execute("INSERT OR IGNORE INTO user_permission_denied (user_id, perm) VALUES (?,?)",
+                   (uid, perm))
     # область: отделы
     scope_all = form.get("scope_all") == "1"
     dep_ids = {_clean_int(v) for v in form.getlist("departments")}

@@ -414,6 +414,10 @@ c.post("/employee/new", data={
     "name": "Петров Пётр", "position_id": str(p1), "department_id": str(d2),
     "salary": "90 000 ₽",
 }, follow_redirects=True)
+# владелец ставит проблему сотруднику из чужого отдела (d2), чтобы проверить view_problems_pool
+petr_id = dbq("SELECT id FROM employees WHERE name='Петров Пётр'")[0]["id"]
+c.post(f"/employee/{petr_id}/problem/add", data={"text": "Проблема из чужой группы"},
+       follow_redirects=True)
 
 # --- вход тимлида ---
 c.get("/logout")
@@ -432,6 +436,8 @@ r = c.post(f"/employee/{eid}/problem/add", data={"text": "Задача тимл�
 check("тимлид добавляет проблему своему", "Задача тимлида" in r.get_data(as_text=True))
 r = c.get("/problems")
 check("тимлид открывает общий список проблем (скоуп по отделам, без 500)", r.status_code == 200)
+check("тимлид видит проблему из чужого отдела (view_problems_pool)",
+      r.status_code == 200 and "Проблема из чужой группы" in r.get_data(as_text=True))
 # но не чужому сотруднику
 other = dbq("SELECT * FROM employees WHERE name='Петров Пётр'")
 if other:
@@ -442,6 +448,30 @@ if other:
 # но отчёт свой может (view_reports нет у тимлида по пресету) — проверим доступ/скрытие
 r = c.get("/report?year=2026")
 check("тимлид НЕ может выгрузить отчёт (нет view_reports)", r.status_code == 403)
+
+# === ГИБКОСТЬ ПРАВ: снятие/добавление любой галки ===
+# владелец снимает у тимлида ролевое право view_problems_pool -> /problems станет 403
+c.get("/logout")
+c.post("/login", data={"password": "test-pass-123"})
+tl_id = dbq("SELECT id FROM users WHERE username='teamlead1'")[0]["id"]
+# соберём полный набор прав тимлида без view_problems_pool
+with appmod.app.app_context():
+    tl_uid = dbq("SELECT id FROM users WHERE username='teamlead1'")[0]["id"]
+    perms_of = appmod.user_perms(tl_uid)
+    no_pool = [p for p in perms_of if p != "view_problems_pool"]
+c.post(f"/users/{tl_id}/edit", data={
+    "role": "teamlead", "is_active": "1", "departments": [str(d1)],
+    "scope_all": "", "perms": no_pool,
+})
+with appmod.app.app_context():
+    after = appmod.user_perms(tl_id)
+check("снятие ролевого права работает (view_problems_pool убран)",
+      "view_problems_pool" not in after and "edit_employee" in after)
+c.get("/logout")
+c.post("/login", data={"username": "teamlead1", "password": "tl-pass"})
+r = c.get("/problems")
+check("после снятия права тимлид не видит общий список проблем (403)",
+      r.status_code == 403)
 
 # --- вход зрителя ---
 c.get("/logout")
