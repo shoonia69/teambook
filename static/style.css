@@ -132,8 +132,6 @@ a.view { color: var(--accent2); font-weight: 500; }
 .btn-small-x { border: none; background: transparent; color: var(--muted); cursor: pointer;
                font-size: 12px; padding: 0 2px; }
 .btn-small-x:hover { color: var(--danger); }
-.user-name { text-decoration: none; cursor: pointer; }
-.user-name:hover { text-decoration: underline; }
 
 /* ---------- выпадающее меню пользователя в шапке ---------- */
 .user-area { position: relative; display: flex; align-items: center; }
