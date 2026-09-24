@@ -45,7 +45,7 @@
     {% for p in info.problems %}
       <div class="problem-row">
         <div style="flex:1;white-space:pre-wrap">{{ p.text }}</div>
-        {% if p.pid in my_pids %}
+        {% if 'manage_problems' in perms %}
         <form method="post" action="{{ url_for('problem_delete', pid=p.pid) }}"
               onsubmit="return confirm('Удалить проблему?')">
           <button class="btn small danger" type="submit" title="Отметить решённой и удалить">✔ Готово</button>

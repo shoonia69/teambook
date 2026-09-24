@@ -161,7 +161,6 @@ CREATE TABLE IF NOT EXISTS employee_history (
     position_id INTEGER REFERENCES positions(id) ON DELETE SET NULL,
     salary      TEXT DEFAULT '',
     note        TEXT DEFAULT '',
-    space_owner INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT DEFAULT (datetime('now'))
 );
 
@@ -175,9 +174,8 @@ CREATE TABLE IF NOT EXISTS year_records (
     wishes_employee   TEXT DEFAULT '',
     comments          TEXT DEFAULT '',
     colleagues_feedback TEXT DEFAULT '',
-    space_owner       INTEGER NOT NULL DEFAULT 0,
     updated_at        TEXT DEFAULT (datetime('now')),
-    UNIQUE(employee_id, year, semester, space_owner)
+    UNIQUE(employee_id, year, semester)
 );
 
 CREATE TABLE IF NOT EXISTS meetings (
@@ -185,7 +183,6 @@ CREATE TABLE IF NOT EXISTS meetings (
     employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
     date        TEXT NOT NULL,
     summary     TEXT DEFAULT '',
-    space_owner INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT DEFAULT (datetime('now'))
 );
 
@@ -206,25 +203,7 @@ CREATE TABLE IF NOT EXISTS problems (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
     text        TEXT NOT NULL DEFAULT '',
-    space_owner INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT DEFAULT (datetime('now'))
-);
-
--- Заметки по сотруднику, разнесённые по личным слоям (space_owner).
-CREATE TABLE IF NOT EXISTS employee_notes (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
-    text        TEXT DEFAULT '',
-    space_owner INTEGER NOT NULL DEFAULT 0,
-    updated_at  TEXT DEFAULT (datetime('now')),
-    UNIQUE(employee_id, space_owner)
-);
-
--- Открытия доступа к личному слою пользователя (owner) другим пользователям (viewer).
-CREATE TABLE IF NOT EXISTS space_shares (
-    owner_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    viewer_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    PRIMARY KEY (owner_id, viewer_id)
 );
 
 CREATE TABLE IF NOT EXISTS users (
@@ -319,12 +298,6 @@ def init_db():
     if "target" not in acols:
         db.execute("ALTER TABLE audit_log ADD COLUMN target TEXT DEFAULT ''")
 
-    # Миграция на личные пространства (space_owner):
-    #   - у блок-таблиц появляется колонка space_owner (NOT NULL DEFAULT 0);
-    #   - существующие записи принадлежат владельцу (первому пользователю роли owner);
-    #   - заметки переносятся из employees.notes в employee_notes (слой владельца).
-    _migrate_spaces(db)
-
     # Миграция авторизации: если учётных записей нет — создать владельца.
     if not db.execute("SELECT 1 FROM users LIMIT 1").fetchone():
         _ensure_owner(db)
@@ -351,52 +324,6 @@ def _ensure_owner(db):
         print(f"[TeamBook] ВНИМАНИЕ: HR_PASSWORD не задан, пароль сгенерирован автоматически: "
               f"{password}")
 
-
-def _migrate_spaces(db):
-    """Миграция на личные пространства (space_owner).
-
-    - Добавляет колонки space_owner к существующим блок-таблицам,
-      если их ещё нет (для БД, созданных до этой фичи).
-    - Переносит employees.notes в таблицу employee_notes (слой владельца).
-    - Существующие записи относит в слой владельца (первого пользователя роли owner).
-    """
-    # 1) колонки space_owner в блок-таблицах
-    for tbl in ("employee_history", "year_records", "meetings", "problems"):
-        cols = {r[1] for r in db.execute("PRAGMA table_info(%s)" % tbl).fetchall()}
-        if "space_owner" not in cols:
-            db.execute("ALTER TABLE %s ADD COLUMN space_owner INTEGER NOT NULL DEFAULT 0" % tbl)
-    # 2) таблица employee_notes может отсутствовать в старых БД — создаём
-    db.execute("""CREATE TABLE IF NOT EXISTS employee_notes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
-        text TEXT DEFAULT '',
-        space_owner INTEGER NOT NULL DEFAULT 0,
-        updated_at TEXT DEFAULT (datetime('now')),
-        UNIQUE(employee_id, space_owner)
-    )""")
-    db.execute("""CREATE TABLE IF NOT EXISTS space_shares (
-        owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        viewer_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        PRIMARY KEY (owner_id, viewer_id)
-    )""")
-    # 3) владелец = первый активный пользователь роли owner
-    owner_row = db.execute(
-        "SELECT id FROM users WHERE role='owner' AND is_active=1 ORDER BY id LIMIT 1"
-    ).fetchone()
-    owner_id = owner_row["id"] if owner_row else 0
-    # 4) перенос employees.notes в employee_notes (слой владельца) — только старые
-    if owner_id:
-        rows = db.execute(
-            "SELECT id, notes FROM employees WHERE notes IS NOT NULL AND notes != ''"
-        ).fetchall()
-        for r in rows:
-            db.execute(
-                "INSERT OR IGNORE INTO employee_notes (employee_id, text, space_owner) VALUES (?,?,?)",
-                (r["id"], r["notes"] or "", owner_id),
-            )
-        # 5) старые записи блоков -> слой владельца (были общими)
-        for tbl in ("employee_history", "year_records", "meetings", "problems"):
-            db.execute("UPDATE %s SET space_owner=? WHERE space_owner=0" % tbl, (owner_id,))
 
 def _repair_dangling_fk(db, table, fk_col):
     """Если таблица ссылается на employees_old (битая ссылка от переименования),
@@ -851,49 +778,6 @@ def _emp_scope_or_403(db, eid, perm=None):
     return emp
 
 
-# --------------------------------------------------------------------------- #
-# Личные пространства (space_owner)
-# --------------------------------------------------------------------------- #
-def user_role(uid):
-    """Роль пользователя (строка) или ''."""
-    db = get_db()
-    row = db.execute("SELECT role FROM users WHERE id=?", (uid,)).fetchone()
-    return row["role"] if row else ""
-
-
-def visible_owners(db, uid):
-    """id пользователей, чьи личные слои видит пользователь uid.
-
-    Всегда виден свой слой; слои, открытые uid через space_shares; если роль
-    owner — все слои.
-    """
-    owners = {uid}
-    for r in db.execute("SELECT owner_id FROM space_shares WHERE viewer_id=? AND owner_id<>?",
-                        (uid, uid)):
-        owners.add(r["owner_id"])
-    if user_role(uid) == "owner":
-        for r in db.execute("SELECT id FROM users WHERE is_active=1"):
-            owners.add(r["id"])
-    return owners
-
-
-def space_where(alias="", owners=None, uid=None):
-    """SQL-условие «space_owner ∈ видимые слои» + params.
-
-    alias — префикс таблицы ('e.' для employee-блоков).
-    """
-    db = get_db()
-    if owners is None:
-        owners = visible_owners(db, uid or session["uid"])
-    px = (alias + ".") if alias else ""
-    return "%s IN (%s)" % (px + "space_owner", ",".join("?" * len(owners))), list(owners)
-
-
-def can_access_space(db, uid, owner_id):
-    """Может ли uid видеть личный слой owner_id (или это его собственный слой)."""
-    return owner_id in visible_owners(db, uid)
-
-
 def _require(perm):
     """Декоратор: требует право, иначе 403."""
     def deco(f):
@@ -1207,20 +1091,9 @@ def employee_view(eid):
     # Проверка доступа к сотруднику по области видимости пользователя
     if not _employee_in_scope(db, session["uid"], emp) or not can(session["uid"], "view_employees"):
         abort(403)
-
-    # --- Личное пространство: какой слой просматриваем ---
-    # default — свой слой; owner может выбрать любой; остальные — открытые им
-    uid = session["uid"]
-    viewers = visible_owners(db, uid)
-    space = request.args.get("space", type=int, default=uid)
-    if space not in viewers:
-        space = uid  # нет доступа к запрошенному слою — свой
-    own = (space == uid)  # свой слой: можно писать; чужие — просмотр
-
     years = db.execute(
-        "SELECT DISTINCT year FROM year_records WHERE employee_id=? AND space_owner=? "
-        "ORDER BY year DESC",
-        (eid, space),
+        "SELECT DISTINCT year FROM year_records WHERE employee_id=? ORDER BY year DESC",
+        (eid,),
     ).fetchall()
     year = request.args.get("year", type=int, default=None)
     if year is None and years:
@@ -1234,20 +1107,19 @@ def employee_view(eid):
     ).fetchall()
 
     records = db.execute(
-        "SELECT * FROM year_records WHERE employee_id=? AND year=? AND space_owner=?",
-        (eid, year, space),
+        "SELECT * FROM year_records WHERE employee_id=? AND year=?",
+        (eid, year),
     ).fetchall()
     records = {r["semester"]: r for r in records}
 
     meetings = db.execute(
-        "SELECT * FROM meetings WHERE employee_id=? AND space_owner=? "
-        "ORDER BY date DESC, id DESC",
-        (eid, space),
+        "SELECT * FROM meetings WHERE employee_id=? ORDER BY date DESC, id DESC",
+        (eid,),
     ).fetchall()
 
     problems = db.execute(
-        "SELECT * FROM problems WHERE employee_id=? AND space_owner=? ORDER BY id DESC",
-        (eid, space),
+        "SELECT * FROM problems WHERE employee_id=? ORDER BY id DESC",
+        (eid,),
     ).fetchall()
 
     # История изменений должности/зарплаты (датированная)
@@ -1256,29 +1128,11 @@ def employee_view(eid):
         SELECT h.*, p.name AS position_name
         FROM employee_history h
         LEFT JOIN positions p ON p.id = h.position_id
-        WHERE h.employee_id=? AND h.space_owner=?
+        WHERE h.employee_id=?
         ORDER BY h.change_date DESC, h.id DESC
         """,
-        (eid, space),
+        (eid,),
     ).fetchall()
-
-    # Заметки слоя
-    notes_row = db.execute(
-        "SELECT text FROM employee_notes WHERE employee_id=? AND space_owner=?",
-        (eid, space)).fetchone()
-    emp_notes = notes_row["text"] if notes_row and notes_row["text"] else ""
-
-    # Кто владелец просматриваемого слоя
-    space_user = db.execute("SELECT id, username, role FROM users WHERE id=?",
-                            (space,)).fetchone()
-
-    # Список слоёв для переключателя: те, что доступны текущему пользователю
-    space_list = db.execute(
-        "SELECT id, username, role FROM users WHERE id IN (%s) AND is_active=1 "
-        "ORDER BY role='owner' DESC, username"
-        % ",".join("?" * len(viewers)),
-        list(viewers)).fetchall()
-
     positions, _ = _cat_options(db)
 
     # Кто последним редактировал каждый блок карточки (по журналу аудита)
@@ -1299,12 +1153,6 @@ def employee_view(eid):
         now_year=datetime.now().year,
         can_salary=can(session["uid"], "view_salary"),
         editors=editors,
-        space=space,
-        own=own,
-        space_user=space_user,
-        space_list=space_list,
-        emp_notes=emp_notes,
-        cand_viewers=_candidate_viewers(),
     )
 
 
@@ -1324,15 +1172,11 @@ def employee_delete(eid):
 def employee_notes(eid):
     db = get_db()
     _emp_scope_or_403(db, eid, "manage_notes")
-    uid = session["uid"]
     notes = request.form.get("notes", "")
-    db.execute(
-        "INSERT INTO employee_notes (employee_id, text, space_owner, updated_at) VALUES (?,?,?, datetime('now')) "
-        "ON CONFLICT(employee_id, space_owner) DO UPDATE SET text=excluded.text, updated_at=datetime('now')",
-        (eid, notes, uid))
+    db.execute("UPDATE employees SET notes=? WHERE id=?", (notes, eid))
     db.commit()
     flash("Заметки сохранены", "ok")
-    return redirect(url_for("employee_view", eid=eid, space=uid))
+    return redirect(url_for("employee_view", eid=eid))
 
 
 @app.route("/employee/<int:eid>/history/add", methods=["POST"])
@@ -1340,20 +1184,19 @@ def employee_notes(eid):
 def history_add(eid):
     db = get_db()
     _emp_scope_or_403(db, eid, "manage_history")
-    uid = session["uid"]
     change_date = request.form.get("change_date", "").strip()
     if not change_date:
         flash("Дата изменения обязательна", "error")
-        return redirect(url_for("employee_view", eid=eid, space=uid))
+        return redirect(url_for("employee_view", eid=eid))
     db.execute(
-        "INSERT INTO employee_history (employee_id, change_date, position_id, salary, note, space_owner) "
-        "VALUES (?,?,?,?,?,?)",
+        "INSERT INTO employee_history (employee_id, change_date, position_id, salary, note) "
+        "VALUES (?,?,?,?,?)",
         (eid, change_date, _clean_int(request.form.get("position_id")),
-         request.form.get("salary", "").strip(), request.form.get("note", "").strip(), uid),
+         request.form.get("salary", "").strip(), request.form.get("note", "").strip()),
     )
     db.commit()
     flash("Запись истории добавлена", "ok")
-    return redirect(url_for("employee_view", eid=eid, space=uid))
+    return redirect(url_for("employee_view", eid=eid))
 
 
 @app.route("/history/<int:hid>/edit", methods=["POST"])
@@ -1364,9 +1207,6 @@ def history_edit(hid):
     if not rec:
         abort(404)
     _emp_scope_or_403(db, rec["employee_id"], "manage_history")
-    uid = session["uid"]
-    if rec["space_owner"] != uid:
-        abort(403)  # править можно только свой слой
     change_date = request.form.get("change_date", rec["change_date"]).strip()
     db.execute(
         "UPDATE employee_history SET change_date=?, position_id=?, salary=?, note=? WHERE id=?",
@@ -1375,7 +1215,7 @@ def history_edit(hid):
     )
     db.commit()
     flash("Запись истории обновлена", "ok")
-    return redirect(url_for("employee_view", eid=rec["employee_id"], space=uid))
+    return redirect(url_for("employee_view", eid=rec["employee_id"]))
 
 
 @app.route("/history/<int:hid>/delete", methods=["POST"])
@@ -1385,13 +1225,10 @@ def history_delete(hid):
     rec = db.execute("SELECT * FROM employee_history WHERE id=?", (hid,)).fetchone()
     if rec:
         _emp_scope_or_403(db, rec["employee_id"], "manage_history")
-        if rec["space_owner"] != session["uid"]:
-            abort(403)
         db.execute("DELETE FROM employee_history WHERE id=?", (hid,))
         db.commit()
         flash("Запись истории удалена", "ok")
-        return redirect(url_for("employee_view", eid=rec["employee_id"],
-                                space=session["uid"]))
+        return redirect(url_for("employee_view", eid=rec["employee_id"]))
     abort(404)
 
 
@@ -1403,44 +1240,37 @@ def history_delete(hid):
 def record_save(eid):
     db = get_db()
     _emp_scope_or_403(db, eid, "manage_semesters")
-    uid = session["uid"]
     year = request.form.get("year", "0").strip()
     semester = request.form.get("semester", "").strip()
     try:
         year = int(year)
     except ValueError:
         abort(400)
-    rec = db.execute(
-        "SELECT id FROM year_records WHERE employee_id=? AND year=? AND semester=? AND space_owner=?",
-        (eid, year, semester, uid)).fetchone()
-    if rec:
-        db.execute(
-            """UPDATE year_records SET
-                goals_employee=?, proposals_manager=?, wishes_employee=?,
-                comments=?, colleagues_feedback=?, updated_at=datetime('now')
-               WHERE id=?""",
-            (request.form.get("goals_employee", ""),
-             request.form.get("proposals_manager", ""),
-             request.form.get("wishes_employee", ""),
-             request.form.get("comments", ""),
-             request.form.get("colleagues_feedback", ""), rec["id"]),
-        )
-    else:
-        db.execute(
-            """INSERT INTO year_records (employee_id, year, semester, goals_employee,
-                proposals_manager, wishes_employee, comments, colleagues_feedback,
-                space_owner, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?, datetime('now'))""",
-            (eid, year, semester,
-             request.form.get("goals_employee", ""),
-             request.form.get("proposals_manager", ""),
-             request.form.get("wishes_employee", ""),
-             request.form.get("comments", ""),
-             request.form.get("colleagues_feedback", ""), uid),
-        )
+    db.execute(
+        """
+        INSERT INTO year_records (employee_id, year, semester, goals_employee,
+            proposals_manager, wishes_employee, comments, colleagues_feedback, updated_at)
+        VALUES (?,?,?,?,?,?,?,?, datetime('now'))
+        ON CONFLICT(employee_id, year, semester) DO UPDATE SET
+            goals_employee=excluded.goals_employee,
+            proposals_manager=excluded.proposals_manager,
+            wishes_employee=excluded.wishes_employee,
+            comments=excluded.comments,
+            colleagues_feedback=excluded.colleagues_feedback,
+            updated_at=datetime('now')
+        """,
+        (
+            eid, year, semester,
+            request.form.get("goals_employee", ""),
+            request.form.get("proposals_manager", ""),
+            request.form.get("wishes_employee", ""),
+            request.form.get("comments", ""),
+            request.form.get("colleagues_feedback", ""),
+        ),
+    )
     db.commit()
     flash("Запись сохранена", "ok")
-    return redirect(url_for("employee_view", eid=eid, year=year, space=uid))
+    return redirect(url_for("employee_view", eid=eid, year=year))
 
 
 @app.route("/record/<int:rid>/delete", methods=["POST"])
@@ -1450,13 +1280,10 @@ def record_delete(rid):
     rec = db.execute("SELECT * FROM year_records WHERE id=?", (rid,)).fetchone()
     if rec:
         _emp_scope_or_403(db, rec["employee_id"], "manage_semesters")
-        if rec["space_owner"] != session["uid"]:
-            abort(403)
         eid, year = rec["employee_id"], rec["year"]
         db.execute("DELETE FROM year_records WHERE id=?", (rid,))
         db.commit()
-        return redirect(url_for("employee_view", eid=eid, year=year,
-                                space=session["uid"]))
+        return redirect(url_for("employee_view", eid=eid, year=year))
     abort(404)
 
 
@@ -1466,7 +1293,6 @@ def employee_year_new(eid):
     """Создать каркас года для сотрудника: две пустые полугодовые записи (1H, 2H)."""
     db = get_db()
     _emp_scope_or_403(db, eid, "manage_semesters")
-    uid = session["uid"]
     try:
         year = int(request.form.get("year", "").strip())
     except ValueError:
@@ -1475,12 +1301,12 @@ def employee_year_new(eid):
     for sem in ("1H", "2H"):
         db.execute(
             "INSERT OR IGNORE INTO year_records "
-            "(employee_id, year, semester, space_owner, updated_at) VALUES (?,?,?,?, datetime('now'))",
-            (eid, year, sem, uid),
+            "(employee_id, year, semester, updated_at) VALUES (?,?,?, datetime('now'))",
+            (eid, year, sem),
         )
     db.commit()
     flash(f"Год {year} создан для сотрудника", "ok")
-    return redirect(url_for("employee_view", eid=eid, year=year, space=uid))
+    return redirect(url_for("employee_view", eid=eid, year=year))
 
 
 @app.route("/employee/<int:eid>/year/delete", methods=["POST"])
@@ -1495,15 +1321,15 @@ def employee_year_delete(eid):
         flash("Укажите корректный год", "error")
         return redirect(url_for("employee_view", eid=eid))
     deleted = db.execute(
-        "DELETE FROM year_records WHERE employee_id=? AND year=? AND space_owner=?",
-        (eid, year, session["uid"]),
+        "DELETE FROM year_records WHERE employee_id=? AND year=?",
+        (eid, year),
     ).rowcount
     db.commit()
     if deleted:
         flash(f"Год {year} и его записи удалены", "ok")
     else:
         flash(f"Года {year} у сотрудника не было", "error")
-    return redirect(url_for("employee_view", eid=eid, space=session["uid"]))
+    return redirect(url_for("employee_view", eid=eid))
 
 
 # --------------------------------------------------------------------------- #
@@ -1514,18 +1340,16 @@ def employee_year_delete(eid):
 def meeting_new(eid):
     db = get_db()
     _emp_scope_or_403(db, eid, "manage_meetings")
-    uid = session["uid"]
     if request.method == "POST":
         date = request.form.get("date", "") or datetime.now().strftime("%Y-%m-%d")
         db.execute(
-            "INSERT INTO meetings (employee_id, date, summary, space_owner) VALUES (?,?,?,?)",
-            (eid, date, request.form.get("summary", ""), uid),
+            "INSERT INTO meetings (employee_id, date, summary) VALUES (?,?,?)",
+            (eid, date, request.form.get("summary", "")),
         )
         db.commit()
         flash("Встреча добавлена", "ok")
-        return redirect(url_for("employee_view", eid=eid, space=uid))
-    return render_template("meeting_form.html", eid=eid, mt={}, title="Новая встреча",
-                           space=uid)
+        return redirect(url_for("employee_view", eid=eid))
+    return render_template("meeting_form.html", eid=eid, mt={}, title="Новая встреча")
 
 
 @app.route("/meeting/<int:mid>/edit", methods=["GET", "POST"])
@@ -1536,9 +1360,6 @@ def meeting_edit(mid):
     if not mt:
         abort(404)
     _emp_scope_or_403(db, mt["employee_id"], "manage_meetings")
-    uid = session["uid"]
-    if mt["space_owner"] != uid:
-        abort(403)
     if request.method == "POST":
         date = request.form.get("date", mt["date"])
         db.execute(
@@ -1547,9 +1368,9 @@ def meeting_edit(mid):
         )
         db.commit()
         flash("Встреча обновлена", "ok")
-        return redirect(url_for("employee_view", eid=mt["employee_id"], space=uid))
+        return redirect(url_for("employee_view", eid=mt["employee_id"]))
     return render_template("meeting_form.html", eid=mt["employee_id"], mt=mt,
-                           title="Редактирование встречи", space=uid)
+                           title="Редактирование встречи")
 
 
 @app.route("/meeting/<int:mid>/delete", methods=["POST"])
@@ -1559,12 +1380,9 @@ def meeting_delete(mid):
     mt = db.execute("SELECT * FROM meetings WHERE id=?", (mid,)).fetchone()
     if mt:
         _emp_scope_or_403(db, mt["employee_id"], "manage_meetings")
-        if mt["space_owner"] != session["uid"]:
-            abort(403)
         db.execute("DELETE FROM meetings WHERE id=?", (mid,))
         db.commit()
-        return redirect(url_for("employee_view", eid=mt["employee_id"],
-                                space=session["uid"]))
+        return redirect(url_for("employee_view", eid=mt["employee_id"]))
     abort(404)
 
 
@@ -1584,30 +1402,24 @@ def problems_page():
     # «по всем командам» — без скоупа; иначе — только свои отделы
     all_mode = can(session["uid"], "view_problems_pool")
     sc_sql, sc_params = ("1=1", []) if all_mode else scope_filter(db, session["uid"], "e")
-    # ограничение по личным слоям: видны только те проблемы, чьи слои открыты
-    sp_sql, sp_params = space_where("p")
     rows = db.execute(
-        f"""SELECT e.id AS eid, e.name AS name, p.id AS pid, p.text AS text,
-                    p.space_owner, p.created_at
+        f"""SELECT e.id AS eid, e.name AS name, p.id AS pid, p.text AS text, p.created_at
           FROM problems p
           JOIN employees e ON e.id = p.employee_id
-          WHERE {sc_sql} AND {sp_sql}
+          WHERE {sc_sql}
           ORDER BY e.name COLLATE NOCASE, p.id DESC""",
-        sc_params + sp_params,
+        sc_params,
     ).fetchall()
     # сгруппировать по сотруднику
     by_emp = {}
     for r in rows:
         by_emp.setdefault(r["eid"], {"name": r["name"], "problems": []})["problems"].append(r)
-    # свои проблемы (слой текущего пользователя) — можно удалять «Готово»
-    my_pids = {r["pid"] for r in rows if r["space_owner"] == session["uid"]}
     sc_sql2, sc_params2 = ("1=1", []) if all_mode else scope_filter(db, session["uid"])
     employees = db.execute(
         f"SELECT id, name FROM employees WHERE {sc_sql2} ORDER BY name COLLATE NOCASE",
         sc_params2,
     ).fetchall()
-    return render_template("problems.html", by_emp=by_emp, employees=employees,
-                           my_pids=my_pids)
+    return render_template("problems.html", by_emp=by_emp, employees=employees)
 
 
 @app.route("/employee/<int:eid>/problem/add", methods=["POST"])
@@ -1615,14 +1427,12 @@ def problems_page():
 def problem_add(eid):
     db = get_db()
     _emp_scope_or_403(db, eid, "manage_problems")
-    uid = session["uid"]
     text = request.form.get("text", "").strip()
     if text:
-        db.execute("INSERT INTO problems (employee_id, text, space_owner) VALUES (?,?,?)",
-                   (eid, text, uid))
+        db.execute("INSERT INTO problems (employee_id, text) VALUES (?,?)", (eid, text))
         db.commit()
         flash("Проблема добавлена", "ok")
-    return redirect(url_for("employee_view", eid=eid, space=uid))
+    return redirect(url_for("employee_view", eid=eid))
 
 
 @app.route("/problem/add", methods=["POST"])
@@ -1634,8 +1444,7 @@ def problem_add_general():
     if eid and text:
         db = get_db()
         _emp_scope_or_403(db, eid, "manage_problems")
-        db.execute("INSERT INTO problems (employee_id, text, space_owner) VALUES (?,?,?)",
-                   (eid, text, session["uid"]))
+        db.execute("INSERT INTO problems (employee_id, text) VALUES (?,?)", (eid, text))
         db.commit()
         flash("Проблема добавлена", "ok")
     return redirect(url_for("problems_page"))
@@ -1648,55 +1457,11 @@ def problem_delete(pid):
     p = db.execute("SELECT * FROM problems WHERE id=?", (pid,)).fetchone()
     if p:
         _emp_scope_or_403(db, p["employee_id"], "manage_problems")
-        if p["space_owner"] != session["uid"]:
-            abort(403)
         db.execute("DELETE FROM problems WHERE id=?", (pid,))
         db.commit()
         flash("Проблема удалена", "ok")
-        return redirect(url_for("employee_view", eid=p["employee_id"],
-                                space=session["uid"]))
+        return redirect(url_for("employee_view", eid=p["employee_id"]))
     abort(404)
-
-
-# --------------------------------------------------------------------------- #
-# Доступ к личным пространствам
-# --------------------------------------------------------------------------- #
-def _candidate_viewers():
-    """Кого можно пригласить в свой слой: активные пользователи ролей
-    teamlead/manager/owner, кроме самого владельца слоя."""
-    db = get_db()
-    return db.execute(
-        "SELECT id, username, role FROM users "
-        "WHERE is_active=1 AND role IN ('teamlead','manager','owner') "
-        "AND id<>? ORDER BY role, username",
-        (session["uid"],)).fetchall()
-
-
-@app.route("/space/share", methods=["POST"])
-@login_required
-def space_share():
-    """Открыть свой личный слой другому пользователю (или забрать доступ)."""
-    db = get_db()
-    owner = session["uid"]
-    viewer = _clean_int(request.form.get("viewer_id"))
-    if not viewer:
-        flash("Выберите пользователя", "error")
-        return redirect(request.referrer or url_for("index"))
-    row = db.execute("SELECT role FROM users WHERE id=? AND is_active=1 AND id<>?",
-                     (viewer, owner)).fetchone()
-    if not row or row["role"] not in ("teamlead", "manager", "owner"):
-        abort(403)
-    action = request.form.get("action", "grant")
-    if action == "revoke":
-        db.execute("DELETE FROM space_shares WHERE owner_id=? AND viewer_id=?",
-                   (owner, viewer))
-        flash("Доступ закрыт", "ok")
-    else:
-        db.execute("INSERT OR IGNORE INTO space_shares (owner_id, viewer_id) VALUES (?,?)",
-                   (owner, viewer))
-        flash("Доступ открыт", "ok")
-    db.commit()
-    return redirect(request.referrer or url_for("index"))
 
 
 # --------------------------------------------------------------------------- #
@@ -2108,13 +1873,12 @@ def _report_data(db, eid=None, year=None):
     recs = {}
     if emp_ids:
         marks = ",".join("?" * len(emp_ids))
-        sp_sql, sp_params = space_where("y")
         rr = db.execute(
             f"""
             SELECT employee_id, semester, goals_employee, proposals_manager,
                    wishes_employee, comments, colleagues_feedback, updated_at
-            FROM year_records y WHERE year=? AND employee_id IN ({marks}) AND {sp_sql}
-            """, (year, *emp_ids, *sp_params)
+            FROM year_records WHERE year=? AND employee_id IN ({marks})
+            """, (year, *emp_ids)
         ).fetchall()
         for r in rr:
             recs.setdefault(r["employee_id"], {})[r["semester"]] = r
@@ -2122,11 +1886,9 @@ def _report_data(db, eid=None, year=None):
     # встречи (для отчёта по одному сотруднику)
     meetings = {}
     if eid:
-        sp_sql2, sp_params2 = space_where("m")
         mm = db.execute(
-            "SELECT date, summary FROM meetings m WHERE employee_id=? AND %s "
-            "ORDER BY date DESC, id DESC" % sp_sql2,
-            (eid, *sp_params2)
+            "SELECT date, summary FROM meetings WHERE employee_id=? "
+            "ORDER BY date DESC, id DESC", (eid,)
         ).fetchall()
         meetings = [{"date": m["date"], "summary": m["summary"]} for m in mm]
 
