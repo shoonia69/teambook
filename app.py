@@ -62,6 +62,7 @@ def inject_user():
     return {
         "cur_user": cu,
         "perms": perms,
+        "ROLE_PRESETS": ROLE_PRESETS,
         "ROLE_LABELS": {k: v["label"] for k, v in ROLE_PRESETS.items()},
         "PER_META": PERMISSIONS,
     }
