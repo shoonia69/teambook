@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Пользователи · TeamBook{% endblock %}
+{% block content %}
+
+<div class="toolbar">
+  <h2 style="margin:0">Пользователи</h2>
+  <div class="spacer"></div>
+  <a class="btn primary" href="{{ url_for('user_new') }}">+ Новый пользователь</a>
+</div>
+
+{% for u in users %}
+<div class="card" style="margin-bottom:12px">
+  <div class="toolbar" style="margin-bottom:6px">
+    <strong>{{ u.username }}</strong>
+    <span class="tag-chip" style="--c:#5B8DEF">{{ ROLE_LABELS.get(u.role, u.role) }}</span>
+    {% if not u.is_active %}<span class="tag-chip" style="--c:#C44536">заблокирован</span>{% endif %}
+    <span class="sub" style="margin-left:6px">last login: {{ (u.last_login or '—')[:16] }}</span>
+    <div class="spacer"></div>
+    <a class="btn small" href="{{ url_for('user_edit', uid=u.id) }}">Права</a>
+  </div>
+  <div class="sub">
+    {% if u.s_cnt and not (u.s_names) %}Все отделы{% elif u.s_names %}{{ u.s_names }}{% else %}Нет области{% endif %}
+  </div>
+</div>
+{% endfor %}
+
+{% endblock %}

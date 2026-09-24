@@ -13,13 +13,16 @@
   </div>
   <nav class="nav">
     <a href="{{ url_for('index') }}">Сотрудники</a>
-    <a href="{{ url_for('problems_page') }}">Проблемы</a>
+    {% if 'view_problems_pool' in perms %}<a href="{{ url_for('problems_page') }}">Проблемы</a>{% endif %}
     <a href="{{ url_for('catalogs') }}">Справочники</a>
-    <a href="{{ url_for('backup_page') }}">Резервная копия</a>
-    <a href="{{ url_for('employee_new') }}">+ Добавить сотрудника</a>
+    {% if 'view_reports' in perms %}<a href="{{ url_for('backup_page') }}">Резервная копия</a>{% endif %}
+    {% if 'manage_users' in perms %}<a href="{{ url_for('users_page') }}">Пользователи</a>{% endif %}
+    {% if 'edit_employee' in perms %}<a href="{{ url_for('employee_new') }}">+ Добавить сотрудника</a>{% endif %}
   </nav>
   <div class="user-area">
     {% if session.get('authed') %}
+      <span class="sub" style="margin-right:8px">{{ session.get('username', '') }}</span>
+      <a class="logout" href="{{ url_for('my_password') }}">Пароль</a>
       <a class="logout" href="{{ url_for('logout') }}">Выйти</a>
     {% endif %}
   </div>

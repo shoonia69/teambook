@@ -14,6 +14,7 @@
     <div class="panel-title">Должности</div>
     {% for p in positions %}
       <div class="cat-row">
+        {% if 'edit_employee' in perms %}
         <form method="post" action="{{ url_for('catalog_rename', kind='position', cid=p.id) }}"
               class="cat-edit">
           <input type="text" name="name" value="{{ p.name }}">
@@ -23,15 +24,20 @@
               onsubmit="return confirm('Удалить должность «{{ p.name }}»? У сотрудников она снимется.')">
           <button class="btn small danger" type="submit" title="Удалить">✕</button>
         </form>
+        {% else %}
+          <span>{{ p.name }}</span>
+        {% endif %}
       </div>
     {% else %}
       <div class="empty">Должностей пока нет</div>
     {% endfor %}
 
+    {% if 'edit_employee' in perms %}
     <form method="post" action="{{ url_for('catalog_add', kind='position') }}" class="cat-add">
       <input type="text" name="name" placeholder="Новая должность..." required>
       <button class="btn primary small" type="submit">+ Добавить</button>
     </form>
+    {% endif %}
   </div>
 
   <!-- Отделы -->
@@ -39,6 +45,7 @@
     <div class="panel-title">Отделы</div>
     {% for d in departments %}
       <div class="cat-row">
+        {% if 'edit_employee' in perms %}
         <form method="post" action="{{ url_for('catalog_rename', kind='department', cid=d.id) }}"
               class="cat-edit">
           <input type="text" name="name" value="{{ d.name }}">
@@ -48,15 +55,20 @@
               onsubmit="return confirm('Удалить отдел «{{ d.name }}»? У сотрудников он снимется.')">
           <button class="btn small danger" type="submit" title="Удалить">✕</button>
         </form>
+        {% else %}
+          <span>{{ d.name }}</span>
+        {% endif %}
       </div>
     {% else %}
       <div class="empty">Отделов пока нет</div>
     {% endfor %}
 
+    {% if 'edit_employee' in perms %}
     <form method="post" action="{{ url_for('catalog_add', kind='department') }}" class="cat-add">
       <input type="text" name="name" placeholder="Новый отдел..." required>
       <button class="btn primary small" type="submit">+ Добавить</button>
     </form>
+    {% endif %}
   </div>
 
   <!-- Теги -->
@@ -64,26 +76,35 @@
     <div class="panel-title">Теги</div>
     {% for t in tags %}
       <div class="cat-row">
+        {% if 'edit_employee' in perms %}
         <form method="post" action="{{ url_for('catalog_rename', kind='tag', cid=t.id) }}"
               class="cat-edit tag-edit">
           <span class="tag-dot" style="background:{{ t.color }}"></span>
           <input type="text" name="name" value="{{ t.name }}">
           <button class="btn small" type="submit" title="Переименовать">💾</button>
         </form>
+        {% else %}
+          <span class="tag-dot" style="background:{{ t.color }}"></span>
+          <span>{{ t.name }}</span>
+        {% endif %}
         <span class="sub tag-used">{{ t.used }} чел.</span>
+        {% if 'edit_employee' in perms %}
         <form method="post" action="{{ url_for('catalog_delete', kind='tag', cid=t.id) }}"
               onsubmit="return confirm('Удалить тег «{{ t.name }}»? Снимется у всех сотрудников.')">
           <button class="btn small danger" type="submit" title="Удалить">✕</button>
         </form>
+        {% endif %}
       </div>
     {% else %}
       <div class="empty">Тегов пока нет</div>
     {% endfor %}
 
+    {% if 'edit_employee' in perms %}
     <form method="post" action="{{ url_for('catalog_add', kind='tag') }}" class="cat-add">
       <input type="text" name="name" placeholder="Новый тег..." required>
       <button class="btn primary small" type="submit">+ Добавить</button>
     </form>
+    {% endif %}
     <div class="sub" style="margin-top:8px">Теги отмечают сотрудника (например: риск ухода, наставник, зона роста). Цвет выбирается автоматически.</div>
   </div>
 </div>

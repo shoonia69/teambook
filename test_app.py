@@ -380,6 +380,82 @@ c.get("/logout")
 r = c.get("/", follow_redirects=True)
 check("после логаута снова логин", "/login" in r.request.path)
 
+# === РОЛЕВАЯ МОДЕЛЬ ===
+# логин владельца (без имени — подразумевается владелец)
+r = c.post("/login", data={"password": "test-pass-123"}, follow_redirects=True)
+check("владелец вошёл для создания пользователей", "Сотрудники" in r.get_data(as_text=True))
+
+# создать: тимлид (скоуп = отдел d1, без зарплат и отчётов), зритель (viewer)
+d2 = dbq("SELECT * FROM departments WHERE name='ТП Сбер'")[0]["id"]
+# отдел d1 переименован в 'ТП Orion (переим)'
+c.post("/users/new", data={
+    "username": "teamlead1", "password": "tl-pass", "role": "teamlead",
+    "departments": [str(d1)], "scope_all": "",
+})
+c.post("/users/new", data={
+    "username": "viewer1", "password": "vi-pass", "role": "viewer",
+    "departments": [str(d1)], "scope_all": "",
+})
+check("тимлид создан", len(dbq("SELECT * FROM users WHERE username='teamlead1'")) == 1)
+check("зритель создан", len(dbq("SELECT * FROM users WHERE username='viewer1'")) == 1)
+
+# гость из чужого отдела d2
+c.post("/users/new", data={
+    "username": "other-lead", "password": "ol-pass", "role": "teamlead",
+    "departments": [str(d2)], "scope_all": "",
+})
+
+# вернуть Иванову отдел d1 (ранее сброшен в NULL) и создать сотрудника в d2
+c.post(f"/employee/{eid}/edit", data={
+    "name": "Иванов Иван", "position_id": str(p2),
+    "department_id": str(d1), "salary": "140 000 ₽",
+}, follow_redirects=True)
+c.post("/employee/new", data={
+    "name": "Петров Пётр", "position_id": str(p1), "department_id": str(d2),
+    "salary": "90 000 ₽",
+}, follow_redirects=True)
+
+# --- вход тимлида ---
+c.get("/logout")
+c.post("/login", data={"username": "teamlead1", "password": "tl-pass"})
+r = c.get("/", follow_redirects=True)
+html = r.get_data(as_text=True)
+check("тимлид видит своего сотрудника", "Иванов Иван" in html)
+check("тимлид НЕ видит сотрудника чужого отдела", "Петров" not in html)
+# зарплата скрыта (нет права view_salary по умолчанию)
+check("тимлид не видит зарплату", "120 000" not in html)
+# меню пользователей скрыто
+check("тимлид не видит пункт «Пользователи»", "Пользователи" not in html)
+# тимлид может добавлять проблемы
+r = c.post(f"/employee/{eid}/problem/add", data={"text": "Задача тимлида"},
+           follow_redirects=True)
+check("тимлид добавляет проблему своему", "Задача тимлида" in r.get_data(as_text=True))
+# но не чужому сотруднику
+other = dbq("SELECT * FROM employees WHERE name='Петров Пётр'")
+if other:
+    r = c.post(f"/employee/{other[0]['id']}/problem/add", data={"text": "Чужая задача"})
+    check("тимлид НЕ может добавить проблему чужому", r.status_code == 403)
+    r = c.post(f"/employee/{other[0]['id']}/record", data={})
+    check("тимлид НЕ может сохранить запись чужому", r.status_code == 403)
+# но отчёт свой может (view_reports нет у тимлида по пресету) — проверим доступ/скрытие
+r = c.get("/report?year=2026")
+check("тимлид НЕ может выгрузить отчёт (нет view_reports)", r.status_code == 403)
+
+# --- вход зрителя ---
+c.get("/logout")
+c.post("/login", data={"username": "viewer1", "password": "vi-pass"})
+r = c.get("/", follow_redirects=True)
+html = r.get_data(as_text=True)
+check("зритель видит список", "Сотрудники" in html)
+check("зритель НЕ видит зарплату", "120 000" not in html)
+r = c.post(f"/employee/{eid}/record", data={"year": "2026", "semester": "1H",
+                                            "goals_employee": "x"})
+check("зритель НЕ может сохранять записи (403)", r.status_code == 403)
+r = c.get("/problems")
+check("зритель не видит общий список проблем", r.status_code == 403)
+r = c.get("/users")
+check("зритель не видит пользователей", r.status_code != 200)
+
 print()
 if failures:
     print(f"ИТОГ: {len(failures)} ПРОВАЛЕНО -> {failures}")
