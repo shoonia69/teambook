@@ -145,14 +145,20 @@ a.view { color: var(--accent2); font-weight: 500; }
 .caret { font-size: 10px; opacity: .7; }
 .user-menu-dropdown {
   display: none; position: absolute; right: 0; top: calc(100% + 6px);
-  min-width: 170px; background: var(--card); border: 1px solid var(--border);
-  border-radius: 10px; padding: 4px; box-shadow: 0 6px 20px rgba(0,0,0,.15); z-index: 50;
+  min-width: 170px;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 10px; padding: 4px;
+  box-shadow: 0 6px 20px rgba(0,0,0,.35); z-index: 50;
 }
 .user-menu-dropdown a {
   display: block; padding: 8px 12px; border-radius: 6px; text-decoration: none;
-  color: var(--text); font-size: 14px;
+  color: var(--text); font-size: 14px; white-space: nowrap;
 }
-.user-menu-dropdown a:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.user-menu-dropdown a:hover {
+  background: color-mix(in srgb, var(--accent) 18%, var(--panel2));
+  color: var(--text);
+}
 .user-menu.open .user-menu-dropdown { display: block; }
 
 /* ---------- проблемы ---------- */
