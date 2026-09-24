@@ -1177,9 +1177,10 @@ def problems_page():
     by_emp = {}
     for r in rows:
         by_emp.setdefault(r["eid"], {"name": r["name"], "problems": []})["problems"].append(r)
+    sc_sql2, sc_params2 = scope_filter(db, session["uid"])  # без alias (таблица без префикса)
     employees = db.execute(
-        f"SELECT id, name FROM employees WHERE {sc_sql} ORDER BY name COLLATE NOCASE",
-        sc_params,
+        f"SELECT id, name FROM employees WHERE {sc_sql2} ORDER BY name COLLATE NOCASE",
+        sc_params2,
     ).fetchall()
     return render_template("problems.html", by_emp=by_emp, employees=employees)
 
@@ -1300,6 +1301,7 @@ def user_edit(uid):
     # владельца запрещаем править самому себе / удалить владельца нельзя
     departments = db.execute("SELECT * FROM departments ORDER BY name").fetchall()
     cur_perms = user_perms(uid)
+    role_perms = set(ROLE_PRESETS.get(user["role"], {}).get("perms", set()))
     scope = user_scope(uid)
     scope_deps = tuple(scope["departments"])
     if request.method == "POST":
@@ -1317,7 +1319,8 @@ def user_edit(uid):
     return render_template("user_form.html", user=user, departments=departments,
                            title="Редактирование пользователя",
                            role_default=user["role"], cur_perms=cur_perms,
-                           scope_deps=scope_deps, scope_all=scope["all"])
+                           role_perms=role_perms, scope_deps=scope_deps,
+                           scope_all=scope["all"])
 
 
 def _save_user_rights(db, uid, form):

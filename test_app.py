@@ -430,6 +430,8 @@ check("тимлид не видит пункт «Пользователи»", "�
 r = c.post(f"/employee/{eid}/problem/add", data={"text": "Задача тимлида"},
            follow_redirects=True)
 check("тимлид добавляет проблему своему", "Задача тимлида" in r.get_data(as_text=True))
+r = c.get("/problems")
+check("тимлид открывает общий список проблем (скоуп по отделам, без 500)", r.status_code == 200)
 # но не чужому сотруднику
 other = dbq("SELECT * FROM employees WHERE name='Петров Пётр'")
 if other:

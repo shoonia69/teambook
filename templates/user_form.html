@@ -51,14 +51,23 @@
       {% endfor %}
     </div>
 
-    <div class="panel-title" style="margin-top:18px">Права (дополнительно к роли)</div>
+    <div class="panel-title" style="margin-top:18px">
+      Права (от роли — всегда включены, отметить нельзя; дополнительно — можно снимать/добавлять)
+    </div>
     <div class="tag-select" style="margin-bottom:10px">
       {% for perm, label in PER_META.items() %}
-        <label class="tag-option">
-          <input type="checkbox" name="perms" value="{{ perm }}"
-                 {{ 'checked' if perm in (cur_perms|default({})) }}>
-          {{ label }}
-        </label>
+        {% if perm in (role_perms|default([])) %}
+          <label class="tag-option" style="opacity:.7">
+            <input type="checkbox" name="from_role" value="{{ perm }}" checked disabled>
+            {{ label }} <span class="sub">(от роли)</span>
+          </label>
+        {% else %}
+          <label class="tag-option">
+            <input type="checkbox" name="perms" value="{{ perm }}"
+                   {{ 'checked' if perm in (cur_perms|default({})) }}>
+            {{ label }} <span class="sub">(доп.)</span>
+          </label>
+        {% endif %}
       {% endfor %}
     </div>
 
