@@ -496,15 +496,69 @@ tl_id = dbq("SELECT id FROM users WHERE username='teamlead1'")[0]["id"]
 r = c.get(f"/users/{tl_id}/edit")
 check("страница редактирования пользователя показывает чекбокс активности",
       "is_active" in r.get_data(as_text=True))
-# сохранить: роль teamlead, отдел d1, отметить активность
+# сохранить: роль teamlead, отдел d1, отметить активность (форма шлёт полный список прав)
+with appmod.app.app_context():
+    curr_perms = sorted(appmod.user_perms(tl_id))
 c.post(f"/users/{tl_id}/edit", data={
     "role": "teamlead", "is_active": "1", "departments": [str(d1)], "scope_all": "",
+    "perms": curr_perms,
 })
 tl_after = dbq("SELECT is_active FROM users WHERE username='teamlead1'")[0]["is_active"]
 check("после редактирования пользователь остался активным (is_active=1)", tl_after == 1)
 # новый пользователь по умолчанию активен
 nu = dbq("SELECT is_active FROM users WHERE username='viewer1'")[0]["is_active"]
 check("созданный пользователь активен по умолчанию", nu == 1)
+
+# === АУДИТ: write-запрос логируется ===
+owner_id = dbq("SELECT id FROM users WHERE username='admin'")[0]["id"]
+before = dbq("SELECT COUNT(*) c FROM audit_log")[0]["c"]
+c.post(f"/employee/{eid}/problem/add", data={"text": "Для аудита"})
+with appmod.app.app_context():
+    rows = dbq("SELECT action, detail FROM audit_log ORDER BY id DESC LIMIT 1")
+check("журнал аудита пишет write-действия",
+      rows[0]["action"] == "write" and "проблем" in rows[0]["detail"])
+
+# === ЗАЩИТА ВЛАДЕЛЬЦА: невладелец (даже с manage_users) не может править владельца ===
+# вернуть тимлиду view_problems_pool не важно; выдадим тимлиду manage_users и проверим 403 на owner
+tl_id = dbq("SELECT id FROM users WHERE username='teamlead1'")[0]["id"]
+with appmod.app.app_context():
+    tperms = appmod.user_perms(tl_id) | {"manage_users"}
+no_del = [p for p in tperms if p != "view_problems_pool"]
+c.post(f"/users/{tl_id}/edit", data={
+    "role": "teamlead", "is_active": "1", "departments": [str(d1)],
+    "scope_all": "", "perms": no_del,
+})
+c.get("/logout")
+c.post("/login", data={"username": "teamlead1", "password": "tl-pass"})
+r = c.post(f"/users/{owner_id}/edit", data={"role": "viewer", "is_active": "0"})
+check("невладелец не может изменить владельца (403)", r.status_code == 403)
+r = c.post(f"/users/{owner_id}/password", data={"password": "hacked"})
+check("невладелец не может сменить пароль владельца (403)", r.status_code == 403)
+r = c.post(f"/users/{owner_id}/delete", data={})
+# удаление владельца -> flash, не 403; проверим, что владелец цел
+check("владельца нельзя удалить",
+      r.status_code == 302 and dbq("SELECT id FROM users WHERE id=?", (owner_id,)))
+check("пароль владельца не изменён",
+      dbq("SELECT is_active FROM users WHERE id=?", (owner_id,))[0]["is_active"] == 1)
+
+# === ШАБЛОНЫ ПРАВ ===
+c.get("/logout")
+c.post("/login", data={"password": "test-pass-123"})
+# сохранить права тимлида как шаблон
+c.post(f"/users/{tl_id}/save-template", data={"name": "Шаблон тимлида"})
+tpl = dbq("SELECT * FROM role_templates WHERE name='Шаблон тимлида'")
+check("шаблон прав сохранён (без manage_users)", len(tpl) == 1
+      and "edit_employee" in tpl[0]["perms_json"] and "manage_users" not in tpl[0]["perms_json"])
+# применить шаблон к зрителю
+vid = dbq("SELECT id FROM users WHERE username='viewer1'")[0]["id"]
+c.post(f"/users/{vid}/apply-template/{tpl[0]['id']}", data={})
+with appmod.app.app_context():
+    vperms = appmod.user_perms(vid)
+check("шаблон применён к зрителю (появилось edit_employee)",
+      "edit_employee" in vperms and "view_employees" in vperms)
+# удалить шаблон
+c.post(f"/templates/{tpl[0]['id']}/delete", data={})
+check("шаблон удалён", len(dbq("SELECT * FROM role_templates WHERE name='Шаблон тимлида'")) == 0)
 
 print()
 if failures:

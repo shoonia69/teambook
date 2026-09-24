@@ -11,6 +11,7 @@ import sqlite3
 import secrets
 import shutil
 import tempfile
+import json
 from datetime import datetime
 from functools import wraps
 
@@ -238,6 +239,15 @@ CREATE TABLE IF NOT EXISTS audit_log (
     user_id     INTEGER,
     action      TEXT,
     detail      TEXT,
+    created_at  TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS role_templates (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL UNIQUE,
+    perms_json  TEXT NOT NULL DEFAULT '[]',
+    scope_all   INTEGER NOT NULL DEFAULT 0,
+    depart_json TEXT NOT NULL DEFAULT '[]',
     created_at  TEXT DEFAULT (datetime('now'))
 );
 """
@@ -473,6 +483,59 @@ def _audit(db, user_id, action, detail=""):
                    (user_id, action, str(detail)[:500]))
     except Exception:
         pass
+
+
+# Человеко-читаемые описания write-эндпоинтов для журнала аудита.
+# Ключ — endpoint Flask; значение — шаблон описания. {n} подставляется из kwargs.
+_AUDIT_LABELS = {
+    "employee_new":        "Создал сотрудника",
+    "employee_edit":       "Изменил сотрудника {eid}",
+    "employee_delete":     "Удалил сотрудника {eid}",
+    "employee_notes":      "Изменил заметки сотрудника {eid}",
+    "record_save":         "Сохранил полугодовую запись сотрудника {eid}",
+    "record_delete":       "Удалил полугодовую запись {rid}",
+    "employee_year_new":   "Создал год сотруднику {eid}",
+    "employee_year_delete":"Удалил год сотруднику {eid}",
+    "history_add":         "Добавил запись истории сотруднику {eid}",
+    "history_edit":        "Изменил запись истории {hid}",
+    "history_delete":      "Удалил запись истории {hid}",
+    "meeting_new":         "Добавил встречу сотруднику {eid}",
+    "meeting_edit":        "Изменил встречу {mid}",
+    "meeting_delete":      "Удалил встречу {mid}",
+    "problem_add":         "Добавил проблему сотруднику {eid}",
+    "problem_add_general": "Добавил проблему (из общего списка)",
+    "problem_delete":      "Отметил проблему решённой {pid}",
+    "catalog_add":         "Добавил в справочник", 
+    "catalog_rename":      "Переименовал в справочнике",
+    "catalog_delete":      "Удалил из справочника",
+    "user_new":            "Создал учётную запись",
+    "user_edit":           "Изменил учётную запись {uid}",
+    "user_password":       "Сбросил пароль учётной записи {uid}",
+    "user_delete":         "Удалил учётную запись {uid}",
+    "my_password":         "Сменил свой пароль",
+}
+
+
+@app.after_request
+def _audit_after(resp):
+    """Логировать в журнал все write-запросы (POST), кроме входа/выхода."""
+    if request.method != "POST":
+        return resp
+    ep = request.endpoint or ""
+    if ep in ("login", "logout", "static") or not session.get("uid"):
+        return resp
+    label = _AUDIT_LABELS.get(ep, ep)
+    try:
+        detail = label.format(**request.view_args or {})
+    except Exception:
+        detail = label
+    try:
+        db = get_db()
+        _audit(db, session["uid"], "write", detail)
+        db.commit()
+    except Exception:
+        pass
+    return resp
 
 
 def login_required(f):
@@ -1271,7 +1334,9 @@ def users_page():
         " WHERE s.user_id=u.id) s_names "
         "FROM users u ORDER BY u.role, u.username").fetchall()
     departments = db.execute("SELECT * FROM departments ORDER BY name").fetchall()
-    return render_template("users.html", users=users, departments=departments)
+    templates = db.execute("SELECT * FROM role_templates ORDER BY name").fetchall()
+    return render_template("users.html", users=users, departments=departments,
+                           templates=templates)
 
 
 @app.route("/users/new", methods=["GET", "POST"])
@@ -1312,6 +1377,10 @@ def user_edit(uid):
     user = db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
     if not user:
         abort(404)
+    # защита владельца: править владельца может только владелец
+    current = db.execute("SELECT * FROM users WHERE id=?", (session["uid"],)).fetchone()
+    if user["role"] == "owner" and not (current and current["role"] == "owner"):
+        abort(403)
     # владельца запрещаем править самому себе / удалить владельца нельзя
     departments = db.execute("SELECT * FROM departments ORDER BY name").fetchall()
     cur_perms = user_perms(uid)
@@ -1334,7 +1403,9 @@ def user_edit(uid):
                            title="Редактирование пользователя",
                            role_default=user["role"], cur_perms=cur_perms,
                            role_perms=role_perms, scope_deps=scope_deps,
-                           scope_all=scope["all"])
+                           scope_all=scope["all"],
+                           templates=db.execute(
+                               "SELECT * FROM role_templates ORDER BY name").fetchall())
 
 
 def _save_user_rights(db, uid, form, role, default_to_role=False):
@@ -1374,6 +1445,90 @@ def _save_user_rights(db, uid, form, role, default_to_role=False):
                        (uid, d))
 
 
+def _protect_owner(db, user):
+    """Запретить менять владельца кому-либо, кроме самого владельца."""
+    cur = db.execute("SELECT * FROM users WHERE id=?", (session["uid"],)).fetchone()
+    if user["role"] == "owner" and not (cur and cur["role"] == "owner"):
+        abort(403)
+
+
+@app.route("/users/<int:uid>/save-template", methods=["POST"])
+@login_required
+@_require("manage_users")
+def user_save_template(uid):
+    """Сохранить текущий набор прав и область пользователя как именованный шаблон."""
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+    if not user:
+        abort(404)
+    _protect_owner(db, user)
+    name = request.form.get("name", "").strip()
+    if not name:
+        flash("Введите имя шаблона", "error")
+        return redirect(url_for("user_edit", uid=uid))
+    perms = sorted(user_perms(uid))
+    if "manage_users" in perms:  # нельзя сохранять в шаблон владельческие права
+        perms = [p for p in perms if p != "manage_users"]
+    sc = user_scope(uid)
+    try:
+        db.execute("INSERT INTO role_templates (name, perms_json, scope_all, depart_json) "
+                   "VALUES (?,?,?,?)",
+                   (name, json.dumps(perms, ensure_ascii=False),
+                    int(sc["all"]), json.dumps(sc["departments"])))
+        db.commit()
+        flash(f"Шаблон «{name}» сохранён", "ok")
+    except sqlite3.IntegrityError:
+        flash(f"Шаблон «{name}» уже существует", "error")
+    return redirect(url_for("user_edit", uid=uid))
+
+
+@app.route("/users/<int:uid>/apply-template/<int:tid>", methods=["POST"])
+@login_required
+@_require("manage_users")
+def user_apply_template(uid, tid):
+    """Применить сохранённый шаблон прав к пользователю."""
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+    tpl = db.execute("SELECT * FROM role_templates WHERE id=?", (tid,)).fetchone()
+    if not user or not tpl:
+        abort(404)
+    _protect_owner(db, user)
+    perms = json.loads(tpl["perms_json"] or "[]")
+    base = set(ROLE_PRESETS.get(user["role"], {}).get("perms", set()))
+    chosen = set(perms)
+    db.execute("DELETE FROM user_permissions WHERE user_id=?", (uid,))
+    db.execute("DELETE FROM user_permission_denied WHERE user_id=?", (uid,))
+    db.execute("DELETE FROM user_scope WHERE user_id=?", (uid,))
+    for perm in chosen - base:
+        db.execute("INSERT OR IGNORE INTO user_permissions (user_id, perm) VALUES (?,?)",
+                   (uid, perm))
+    for perm in base - chosen:
+        db.execute("INSERT OR IGNORE INTO user_permission_denied (user_id, perm) VALUES (?,?)",
+                   (uid, perm))
+    scope_all = tpl["scope_all"]
+    deps = json.loads(tpl["depart_json"] or "[]")
+    if scope_all:
+        db.execute("INSERT INTO user_scope (user_id, department_id) VALUES (?, NULL)", (uid,))
+    else:
+        for d in deps:
+            db.execute("INSERT OR IGNORE INTO user_scope (user_id, department_id) VALUES (?,?)",
+                       (uid, d))
+    db.commit()
+    flash(f"Шаблон «{tpl['name']}» применён", "ok")
+    return redirect(url_for("user_edit", uid=uid))
+
+
+@app.route("/templates/<int:tid>/delete", methods=["POST"])
+@login_required
+@_require("manage_users")
+def template_delete(tid):
+    db = get_db()
+    db.execute("DELETE FROM role_templates WHERE id=?", (tid,))
+    db.commit()
+    flash("Шаблон удалён", "ok")
+    return redirect(url_for("users_page"))
+
+
 @app.route("/users/<int:uid>/password", methods=["POST"])
 @login_required
 @_require("manage_users")
@@ -1382,6 +1537,10 @@ def user_password(uid):
     user = db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
     if not user:
         abort(404)
+    # защита владельца: сменить пароль владельца может только владелец
+    current = db.execute("SELECT * FROM users WHERE id=?", (session["uid"],)).fetchone()
+    if user["role"] == "owner" and not (current and current["role"] == "owner"):
+        abort(403)
     pw = request.form.get("password", "").strip()
     if not pw:
         flash("Новый пароль не может быть пустым", "error")
@@ -1888,6 +2047,29 @@ def report_employee(eid):
         src = tmp.name
 
     return send_file(src, as_attachment=True, download_name=name, mimetype=mimetype, max_age=0)
+
+
+# --------------------------------------------------------------------------- #
+# Журнал аудита
+# --------------------------------------------------------------------------- #
+@app.route("/audit")
+@login_required
+@_require("view_audit")
+def audit_page():
+    """Журнал аудита: список действий с фильтром по пользователю."""
+    db = get_db()
+    user_id = request.args.get("user_id", type=int)
+    sql = """SELECT a.*, u.username
+             FROM audit_log a LEFT JOIN users u ON u.id=a.user_id"""
+    params = []
+    if user_id:
+        sql += " WHERE a.user_id=?"
+        params.append(user_id)
+    sql += " ORDER BY a.id DESC LIMIT 500"
+    rows = db.execute(sql, params).fetchall()
+    users = db.execute("SELECT id, username, role FROM users ORDER BY username").fetchall()
+    return render_template("audit.html", rows=rows, users=users,
+                           sel_user_id=user_id)
 
 
 # --------------------------------------------------------------------------- #

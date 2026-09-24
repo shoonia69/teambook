@@ -16,6 +16,7 @@
     {% if 'view_problems_pool' in perms %}<a href="{{ url_for('problems_page') }}">Проблемы</a>{% endif %}
     <a href="{{ url_for('catalogs') }}">Справочники</a>
     {% if 'view_reports' in perms %}<a href="{{ url_for('backup_page') }}">Резервная копия</a>{% endif %}
+    {% if 'view_audit' in perms %}<a href="{{ url_for('audit_page') }}">Журнал аудита</a>{% endif %}
     {% if 'manage_users' in perms %}<a href="{{ url_for('users_page') }}">Пользователи</a>{% endif %}
     {% if 'edit_employee' in perms %}<a href="{{ url_for('employee_new') }}">+ Добавить сотрудника</a>{% endif %}
   </nav>

@@ -123,6 +123,18 @@ a.view { color: var(--accent2); font-weight: 500; }
 .tag-option input { accent-color: var(--c); }
 .tag-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
 
+/* ---------- права пользователя столбцом ---------- */
+.perms-col { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.perms-col .tag-option { width: 100%; }
+.chip { display: inline-block; padding: 4px 10px; border-radius: 14px; font-size: 13px;
+        background: color-mix(in srgb, var(--accent) 15%, transparent);
+        border: 1px solid var(--border); }
+.btn-small-x { border: none; background: transparent; color: var(--muted); cursor: pointer;
+               font-size: 12px; padding: 0 2px; }
+.btn-small-x:hover { color: var(--danger); }
+.user-name { text-decoration: none; cursor: pointer; }
+.user-name:hover { text-decoration: underline; }
+
 /* ---------- проблемы ---------- */
 .problem-add { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
 .problem-add textarea { width: 100%; margin-bottom: 8px; }
