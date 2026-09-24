@@ -283,10 +283,15 @@ def _ensure_owner(db):
     """Создать учётную запись владельца (login=admin, пароль из HR_PASSWORD)."""
     username = (os.environ.get("HR_ADMIN_USER", "") or "admin").strip()
     password = ADMIN_PASSWORD or secrets.token_urlsafe(12)
-    db.execute(
-        "INSERT INTO users (username, password_hash, role) VALUES (?,?,?)",
+    # INSERT OR IGNORE — идемпотентно: при одновременном старте нескольких
+    # gunicorn-воркеров владелец создаётся только один раз (гонка безопасна).
+    cur = db.execute(
+        "INSERT OR IGNORE INTO users (username, password_hash, role) VALUES (?,?,?)",
         (username, generate_password_hash(password), "owner"),
     )
+    if cur.rowcount == 0:
+        print(f"[TeamBook] Владелец уже существует: {username}")
+        return
     print(f"[TeamBook] Создана учётная запись владельца: {username}")
     if not ADMIN_PASSWORD:
         print(f"[TeamBook] ВНИМАНИЕ: HR_PASSWORD не задан, пароль сгенерирован автоматически: "
