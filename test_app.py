@@ -159,7 +159,7 @@ p2 = dbq("SELECT id FROM positions WHERE name='Старший инженер'")[
 body = c.get(f"/employee/{eid}").get_data(as_text=True)
 check("в карточке есть история", "История изменения должности и зарплаты" in body)
 # спойлеры блоков
-check("карточка имеет 4 спойлера", body.count('class="card accordion"') == 4)
+check("карточка имеет 5 спойлеров", body.count('class="card accordion"') == 5)
 check("спойлер заметок развёрнут", 'data-acc="notes" open' in body)
 check("спойлер истории свёрнут", 'data-acc="history"' in body and 'data-acc="history" open' not in body)
 c.post(f"/employee/{eid}/history/add", data={
@@ -253,6 +253,34 @@ taglinks = dbq("SELECT tag_id FROM employee_tags WHERE employee_id=?", (eid,))
 check("теги сняты (пустой выбор)", len(taglinks) == 0)
 c.post(f"/catalog/tag/{t_nast['id']}/delete")
 check("тег удалён из справочника", len(dbq("SELECT * FROM tags WHERE id=?", (t_nast["id"],))) == 0)
+
+# --- проблемы: добавление из карточки ---
+c.post(f"/employee/{eid}/problem/add", data={"text": "Не справляется с дедлайнами"})
+c.post(f"/employee/{eid}/problem/add", data={"text": "Нужна менторская поддержка"})
+probs = dbq("SELECT * FROM problems WHERE employee_id=?", (eid,))
+check("2 проблемы добавлены в карточке", len(probs) == 2)
+body = c.get(f"/employee/{eid}").get_data(as_text=True)
+check("проблемы видны в карточке", "Не справляется с дедлайнами" in body and "менторская" in body)
+
+# --- проблемы: общий список ---
+body = c.get("/problems").get_data(as_text=True)
+check("общий список показывает проблемы сотрудника", "Не справляется" in body and "Иванов Иван" in body)
+check("в общем списке есть форма добавления", "problem_add_general" in body or 'name="employee_id"' in body)
+
+# --- проблемы: добавление из общего списка ---
+c.post("/employee/new", data={
+    "name": "Проблемный Петров", "position_id": "", "department_id": "", "salary": ""
+}, follow_redirects=True)
+other = dbq("SELECT id FROM employees WHERE name='Проблемный Петров'")[0]
+c.post("/problem/add", data={"employee_id": str(other["id"]), "text": "Часто опаздывает"})
+probs = dbq("SELECT * FROM problems WHERE employee_id=?", (other["id"],))
+check("проблема добавлена из общего списка", len(probs) == 1)
+
+# --- проблемы: удаление (решена) ---
+pid = dbq("SELECT id FROM problems WHERE text LIKE 'Не справляется%'")[0]
+c.post(f"/problem/{pid['id']}/delete")
+probs = dbq("SELECT * FROM problems WHERE id=?", (pid["id"],))
+check("проблема удалена (решена)", len(probs) == 0)
 
 # --- сотрудник без годов: нет неделимого 2026 по умолчанию ---
 c.post("/employee/new", data={

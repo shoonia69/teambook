@@ -140,6 +140,13 @@ CREATE TABLE IF NOT EXISTS employee_tags (
     tag_id      INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
     PRIMARY KEY (employee_id, tag_id)
 );
+
+CREATE TABLE IF NOT EXISTS problems (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    text        TEXT NOT NULL DEFAULT '',
+    created_at  TEXT DEFAULT (datetime('now'))
+);
 """
 
 
@@ -597,6 +604,11 @@ def employee_view(eid):
         (eid,),
     ).fetchall()
 
+    problems = db.execute(
+        "SELECT * FROM problems WHERE employee_id=? ORDER BY id DESC",
+        (eid,),
+    ).fetchall()
+
     # История изменений должности/зарплаты (датированная)
     history = db.execute(
         """
@@ -621,6 +633,7 @@ def employee_view(eid):
         history=history,
         positions=positions,
         emp_tags=emp_tags,
+        problems=problems,
         now_year=datetime.now().year,
     )
 
@@ -840,6 +853,67 @@ def meeting_delete(mid):
         db.execute("DELETE FROM meetings WHERE id=?", (mid,))
         db.commit()
         return redirect(url_for("employee_view", eid=mt["employee_id"]))
+    abort(404)
+
+
+# --------------------------------------------------------------------------- #
+# Проблемы сотрудников
+# --------------------------------------------------------------------------- #
+@app.route("/problems")
+@login_required
+def problems_page():
+    """Общий список: сотрудники, у которых есть зафиксированные проблемы."""
+    db = get_db()
+    rows = db.execute(
+        """SELECT e.id AS eid, e.name AS name, p.id AS pid, p.text AS text, p.created_at
+           FROM problems p
+           JOIN employees e ON e.id = p.employee_id
+           ORDER BY e.name COLLATE NOCASE, p.id DESC""",
+    ).fetchall()
+    # сгруппировать по сотруднику
+    by_emp = {}
+    for r in rows:
+        by_emp.setdefault(r["eid"], {"name": r["name"], "problems": []})["problems"].append(r)
+    employees = db.execute("SELECT id, name FROM employees ORDER BY name COLLATE NOCASE").fetchall()
+    return render_template("problems.html", by_emp=by_emp, employees=employees)
+
+
+@app.route("/employee/<int:eid>/problem/add", methods=["POST"])
+@login_required
+def problem_add(eid):
+    text = request.form.get("text", "").strip()
+    if text:
+        db = get_db()
+        db.execute("INSERT INTO problems (employee_id, text) VALUES (?,?)", (eid, text))
+        db.commit()
+        flash("Проблема добавлена", "ok")
+    return redirect(url_for("employee_view", eid=eid))
+
+
+@app.route("/problem/add", methods=["POST"])
+@login_required
+def problem_add_general():
+    """Добавить проблему из общего списка (выбор сотрудника в форме)."""
+    eid = _clean_int(request.form.get("employee_id"))
+    text = request.form.get("text", "").strip()
+    if eid and text:
+        db = get_db()
+        db.execute("INSERT INTO problems (employee_id, text) VALUES (?,?)", (eid, text))
+        db.commit()
+        flash("Проблема добавлена", "ok")
+    return redirect(url_for("problems_page"))
+
+
+@app.route("/problem/<int:pid>/delete", methods=["POST"])
+@login_required
+def problem_delete(pid):
+    db = get_db()
+    p = db.execute("SELECT * FROM problems WHERE id=?", (pid,)).fetchone()
+    if p:
+        db.execute("DELETE FROM problems WHERE id=?", (pid,))
+        db.commit()
+        flash("Проблема удалена", "ok")
+        return redirect(url_for("employee_view", eid=p["employee_id"]))
     abort(404)
 
 

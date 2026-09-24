@@ -123,6 +123,15 @@ a.view { color: var(--accent2); font-weight: 500; }
 .tag-option input { accent-color: var(--c); }
 .tag-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
 
+/* ---------- проблемы ---------- */
+.problem-add { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
+.problem-add textarea { width: 100%; margin-bottom: 8px; }
+.problem-row {
+  display: flex; gap: 12px; align-items: flex-start;
+  padding: 8px 0; border-top: 1px solid var(--border);
+}
+.problem-row:first-of-type { border-top: none; }
+
 /* ---------- forms ---------- */
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .form-grid .full { grid-column: 1 / -1; }

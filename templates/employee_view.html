@@ -243,6 +243,46 @@
 </details>
 {% endif %}
 
+<!-- Проблемы сейчас -->
+<details class="card accordion" data-acc="problems">
+  <summary class="acc-summary"><span class="acc-title">Проблемы в работе</span>
+    <span class="acc-count">{% if problems %}· {{ problems|length }}{% endif %}</span>
+    <span class="acc-toggle">свернуть/развернуть</span>
+  </summary>
+  <div class="acc-body">
+  <div class="toolbar" style="margin-bottom:8px">
+    <span class="sub" style="margin-right:auto">Актуальные проблемы, над которыми сейчас нужно работать.</span>
+  </div>
+
+  {% if problems %}
+    {% for p in problems %}
+      <div class="semester-block" style="margin-bottom:12px">
+        <div class="semester-title">
+          <span style="color:var(--danger);font-weight:600">⚠</span>
+          <div style="display:flex;gap:8px;margin-left:auto">
+            <form method="post" action="{{ url_for('problem_delete', pid=p.id) }}"
+                  onsubmit="return confirm('Удалить проблему?')">
+              <button class="btn small danger" type="submit">✔ Готово</button>
+            </form>
+          </div>
+        </div>
+        <div style="white-space:pre-wrap">{{ p.text }}</div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <div class="empty">Проблем нет — отлично!</div>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('problem_add', eid=emp.id) }}" class="problem-add">
+    <textarea name="text" placeholder="Записать новую проблему в работе сотрудника..." required
+              style="min-height:60px"></textarea>
+    <div class="btn-row">
+      <button class="btn small primary" type="submit">+ Добавить проблему</button>
+    </div>
+  </form>
+  </div>
+</details>
+
 <!-- Встречи 1-на-1 -->
 <details class="card accordion" data-acc="meetings">
   <summary class="acc-summary"><span class="acc-title">Встречи 1-на-1</span>
