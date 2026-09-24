@@ -8,7 +8,6 @@
   <a class="btn" href="{{ url_for('index') }}">← К сотрудникам</a>
 </div>
 
-{% if 'manage_problems' in perms %}
 <div class="card" style="margin-bottom:18px">
   <div class="panel-title">Добавить проблему</div>
   <form method="post" action="{{ url_for('problem_add_general') }}">
@@ -32,7 +31,6 @@
     </div>
   </form>
 </div>
-{% endif %}
 
 {% if by_emp %}
   {% for eid, info in by_emp.items() %}
@@ -45,12 +43,10 @@
     {% for p in info.problems %}
       <div class="problem-row">
         <div style="flex:1;white-space:pre-wrap">{{ p.text }}</div>
-        {% if 'manage_problems' in perms %}
         <form method="post" action="{{ url_for('problem_delete', pid=p.pid) }}"
               onsubmit="return confirm('Удалить проблему?')">
           <button class="btn small danger" type="submit" title="Отметить решённой и удалить">✔ Готово</button>
         </form>
-        {% endif %}
       </div>
     {% endfor %}
   </div>

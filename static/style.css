@@ -123,52 +123,6 @@ a.view { color: var(--accent2); font-weight: 500; }
 .tag-option input { accent-color: var(--c); }
 .tag-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
 
-/* ---------- права пользователя столбцом ---------- */
-.perms-col { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
-.perms-col .tag-option { width: 100%; }
-.chip { display: inline-block; padding: 4px 10px; border-radius: 14px; font-size: 13px;
-        background: color-mix(in srgb, var(--accent) 15%, transparent);
-        border: 1px solid var(--border); }
-.btn-small-x { border: none; background: transparent; color: var(--muted); cursor: pointer;
-               font-size: 12px; padding: 0 2px; }
-.btn-small-x:hover { color: var(--danger); }
-
-/* ---------- выпадающее меню пользователя в шапке ---------- */
-.user-area { position: relative; display: flex; align-items: center; }
-.user-menu { position: relative; }
-.user-menu-btn {
-  border: 1px solid var(--border); background: var(--card); color: var(--text);
-  padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 14px;
-  display: inline-flex; align-items: center; gap: 6px;
-}
-.user-menu-btn:hover { border-color: var(--accent); }
-.caret { font-size: 10px; opacity: .7; }
-.user-menu-dropdown {
-  display: none; position: absolute; right: 0; top: calc(100% + 6px);
-  min-width: 170px;
-  background: var(--panel2);
-  border: 1px solid var(--border);
-  border-radius: 10px; padding: 4px;
-  box-shadow: 0 6px 20px rgba(0,0,0,.35); z-index: 50;
-}
-.user-menu-dropdown a {
-  display: block; padding: 8px 12px; border-radius: 6px; text-decoration: none;
-  color: var(--text); font-size: 14px; white-space: nowrap;
-}
-.user-menu-dropdown a:hover {
-  background: color-mix(in srgb, var(--accent) 18%, var(--panel2));
-  color: var(--text);
-}
-.user-menu.open .user-menu-dropdown { display: block; }
-
-/* ---------- «кто последним редактировал» и кликабельный аудит ---------- */
-.edit-by {
-  color: var(--muted); font-size: 12px; margin-left: 8px;
-  white-space: nowrap;
-}
-.audit-link { color: var(--accent); text-decoration: none; }
-.audit-link:hover { text-decoration: underline; }
-
 /* ---------- проблемы ---------- */
 .problem-add { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
 .problem-add textarea { width: 100%; margin-bottom: 8px; }

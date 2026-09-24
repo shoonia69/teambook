@@ -7,19 +7,16 @@
   <div class="toolbar" style="margin-bottom:8px">
     <h2 style="margin:0">{{ emp.name }}</h2>
     <div class="spacer"></div>
-    {% if 'edit_employee' in perms %}<a class="btn small" href="{{ url_for('employee_edit', eid=emp.id) }}">Редактировать</a>{% endif %}
-    {% if 'edit_employee' in perms %}
+    <a class="btn small" href="{{ url_for('employee_edit', eid=emp.id) }}">Редактировать</a>
     <form method="post" action="{{ url_for('employee_delete', eid=emp.id) }}"
           onsubmit="return confirm('Удалить сотрудника «{{ emp.name }}» и все записи?')">
       <button class="btn small danger" type="submit">Удалить</button>
     </form>
-    {% endif %}
   </div>
   <div style="color:var(--muted)">
     {{ emp.position or '—' }}{% if emp.position and emp.department %} · {% endif %}{{ emp.department or '' }}
-    {% if can_salary and emp.salary %} · <strong style="color:var(--text)">{{ emp.salary }}</strong>{% elif not can_salary %} · <span title="Зарплата скрыта">зарплата скрыта</span>{% endif %}
+    {% if emp.salary %} · <strong style="color:var(--text)">{{ emp.salary }}</strong>{% endif %}
     {% if emp.hire_date %} · <span title="Дата приёма на работу">принят с {{ (emp.hire_date or '')[:10] }}</span>{% endif %}
-    {% if editors.get('employee') %}<span class="edit-by">изменено: {{ editors['employee'] }}</span>{% endif %}
   </div>
   {% if emp_tags %}
   <div class="emp-tags" style="margin-top:10px">
@@ -34,11 +31,9 @@
 <details class="card accordion" data-acc="history">
   <summary class="acc-summary"><span class="acc-title">История изменения должности и зарплаты</span>
     <span class="acc-count">{% if history %}· {{ history|length }} зап.{% endif %}</span>
-    {% if editors.get('history') %}<span class="edit-by">последняя правка: {{ editors['history'] }}</span>{% endif %}
     <span class="acc-toggle">свернуть/развернуть</span>
   </summary>
   <div class="acc-body">
-  {% if 'manage_history' in perms %}
   <div class="toolbar" style="margin-bottom:8px">
     <div class="spacer"></div>
     <details class="inline-add">
@@ -75,14 +70,12 @@
       </div>
     </details>
   </div>
-  {% endif %}
 
   {% if history %}
     {% for h in history %}
       <div class="semester-block" style="margin-bottom:12px">
         <div class="semester-title">
           <strong>{{ (h.change_date or '')[:10] }}</strong>
-          {% if 'manage_history' in perms %}
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <details class="inline-edit">
               <summary class="btn small" style="cursor:pointer">Правка</summary>
@@ -122,7 +115,6 @@
               <button class="btn small danger" type="submit">Удалить</button>
             </form>
           </div>
-          {% endif %}
         </div>
         <div style="color:var(--text)">
           {% if h.position_name %}<span class="tag tag-1H">{{ h.position_name }}</span>{% endif %}
@@ -140,19 +132,15 @@
 <!-- Случайные заметки о сотруднике -->
 <details class="card accordion" data-acc="notes" open>
   <summary class="acc-summary"><span class="acc-title">Заметки</span>
-    {% if editors.get('notes') %}<span class="edit-by">последняя правка: {{ editors['notes'] }}</span>{% endif %}
     <span class="acc-toggle">свернуть/развернуть</span>
   </summary>
   <div class="acc-body">
   <form method="post" action="{{ url_for('employee_notes', eid=emp.id) }}">
-    {% if 'edit_employee' in perms %}
     <div class="toolbar" style="margin-bottom:8px">
       <div class="spacer"></div>
       <button class="btn small primary" type="submit">Сохранить</button>
     </div>
-    {% endif %}
     <textarea name="notes" style="min-height:110px"
-              {% if 'edit_employee' not in perms %}readonly{% endif %}
               placeholder="Случайные заметки о сотруднике: черты характера, пожелания по развитию, подвижки, что угодно вне привязки к полугодию.">{{ emp.notes or '' }}</textarea>
   </form>
   </div>
@@ -171,25 +159,21 @@
     {% endfor %}
   </div>
   <div class="spacer"></div>
-  {% if 'manage_semesters' in perms %}
   <form method="post" action="{{ url_for('employee_year_new', eid=emp.id) }}" class="filter-row" style="margin:0">
     <label class="filter-label" for="new-year" style="margin:0">Создать год:</label>
     <input type="number" id="new-year" name="year" min="1990" max="2100"
            value="{{ year if year is not none else now_year }}" style="max-width:100px" required>
     <button class="btn small primary" type="submit">Создать</button>
   </form>
-  {% endif %}
-  {% if year in years and 'manage_semesters' in perms %}
+  {% if year in years %}
   <form method="post" action="{{ url_for('employee_year_delete', eid=emp.id) }}" style="margin:0"
         onsubmit="return confirm('Удалить {{ year }} год и все записи за него? Это действие необратимо.')">
     <input type="hidden" name="year" value="{{ year }}">
     <button class="btn small danger" type="submit">Удалить год {{ year }}</button>
   </form>
   {% endif %}
-  {% if 'view_reports' in perms %}
   <a class="btn small primary" href="{{ url_for('report_employee', eid=emp.id, year=year or now_year, format='xlsx') }}">⬇ Excel</a>
   <a class="btn small primary" href="{{ url_for('report_employee', eid=emp.id, year=year or now_year, format='pdf') }}">⬇ PDF</a>
-  {% endif %}
 </div>
 
 <!-- Полугодовые записи -->
@@ -204,7 +188,6 @@
 {% else %}
 <details class="card accordion" data-acc="semesters">
   <summary class="acc-summary"><span class="acc-title">Полугодовые записи · {{ year }} год</span>
-    {% if editors.get('records') %}<span class="edit-by">последняя правка: {{ editors['records'] }}</span>{% endif %}
     <span class="acc-toggle">свернуть/развернуть</span>
   </summary>
   <div class="acc-body">
@@ -226,34 +209,32 @@
           <div class="semester-fields">
             <div class="sfield">
               <div class="field-label">Цели сотрудника</div>
-              <textarea name="goals_employee" {% if 'manage_semesters' not in perms %}readonly{% endif %} placeholder="Какие цели ставил инженер на это полугодие">{{ (rec.goals_employee if rec else '') }}</textarea>
+              <textarea name="goals_employee" placeholder="Какие цели ставил инженер на это полугодие">{{ (rec.goals_employee if rec else '') }}</textarea>
             </div>
 
             <div class="sfield">
               <div class="field-label">Мои предложения</div>
-              <textarea name="proposals_manager" {% if 'manage_semesters' not in perms %}readonly{% endif %} placeholder="Что я предложил / поставил как руководитель">{{ (rec.proposals_manager if rec else '') }}</textarea>
+              <textarea name="proposals_manager" placeholder="Что я предложил / поставил как руководитель">{{ (rec.proposals_manager if rec else '') }}</textarea>
             </div>
 
             <div class="sfield">
               <div class="field-label">Пожелания сотрудника</div>
-              <textarea name="wishes_employee" {% if 'manage_semesters' not in perms %}readonly{% endif %} placeholder="Его пожелания, запросы, ожидания">{{ (rec.wishes_employee if rec else '') }}</textarea>
+              <textarea name="wishes_employee" placeholder="Его пожелания, запросы, ожидания">{{ (rec.wishes_employee if rec else '') }}</textarea>
             </div>
 
             <div class="sfield">
               <div class="field-label">Мои комментарии</div>
-              <textarea name="comments" {% if 'manage_semesters' not in perms %}readonly{% endif %} placeholder="Комментарии, наблюдения, оценка">{{ (rec.comments if rec else '') }}</textarea>
+              <textarea name="comments" placeholder="Комментарии, наблюдения, оценка">{{ (rec.comments if rec else '') }}</textarea>
             </div>
 
             <div class="sfield">
               <div class="field-label">Отзывы коллег</div>
-              <textarea name="colleagues_feedback" {% if 'manage_semesters' not in perms %}readonly{% endif %} placeholder="Отзывы, впечатления, мнения коллег о сотруднике">{{ (rec.colleagues_feedback if rec else '') }}</textarea>
+              <textarea name="colleagues_feedback" placeholder="Отзывы, впечатления, мнения коллег о сотруднике">{{ (rec.colleagues_feedback if rec else '') }}</textarea>
             </div>
           </div>
-          {% if 'manage_semesters' in perms %}
           <div class="btn-row">
             <button class="btn primary" type="submit">Сохранить</button>
           </div>
-          {% endif %}
         </form>
       </div>
     {% endfor %}
@@ -266,7 +247,6 @@
 <details class="card accordion" data-acc="problems">
   <summary class="acc-summary"><span class="acc-title">Проблемы в работе</span>
     <span class="acc-count">{% if problems %}· {{ problems|length }}{% endif %}</span>
-    {% if editors.get('problems') %}<span class="edit-by">последняя правка: {{ editors['problems'] }}</span>{% endif %}
     <span class="acc-toggle">свернуть/развернуть</span>
   </summary>
   <div class="acc-body">
@@ -279,14 +259,12 @@
       <div class="semester-block" style="margin-bottom:12px">
         <div class="semester-title">
           <span style="color:var(--danger);font-weight:600">⚠</span>
-          {% if 'manage_problems' in perms %}
           <div style="display:flex;gap:8px;margin-left:auto">
             <form method="post" action="{{ url_for('problem_delete', pid=p.id) }}"
                   onsubmit="return confirm('Удалить проблему?')">
               <button class="btn small danger" type="submit">✔ Готово</button>
             </form>
           </div>
-          {% endif %}
         </div>
         <div style="white-space:pre-wrap">{{ p.text }}</div>
       </div>
@@ -295,7 +273,6 @@
     <div class="empty">Проблем нет — отлично!</div>
   {% endif %}
 
-  {% if 'manage_problems' in perms %}
   <form method="post" action="{{ url_for('problem_add', eid=emp.id) }}" class="problem-add">
     <textarea name="text" placeholder="Записать новую проблему в работе сотрудника..." required
               style="min-height:60px"></textarea>
@@ -303,7 +280,6 @@
       <button class="btn small primary" type="submit">+ Добавить проблему</button>
     </div>
   </form>
-  {% endif %}
   </div>
 </details>
 
@@ -311,23 +287,19 @@
 <details class="card accordion" data-acc="meetings">
   <summary class="acc-summary"><span class="acc-title">Встречи 1-на-1</span>
     <span class="acc-count">{% if meetings %}· {{ meetings|length }}{% endif %}</span>
-    {% if editors.get('meetings') %}<span class="edit-by">последняя правка: {{ editors['meetings'] }}</span>{% endif %}
     <span class="acc-toggle">свернуть/развернуть</span>
   </summary>
   <div class="acc-body">
-  {% if 'manage_meetings' in perms %}
   <div class="toolbar" style="margin-bottom:8px">
     <div class="spacer"></div>
     <a class="btn small" href="{{ url_for('meeting_new', eid=emp.id) }}">+ Новая встреча</a>
   </div>
-  {% endif %}
 
   {% if meetings %}
     {% for mt in meetings %}
       <div class="semester-block" style="margin-bottom:12px">
         <div class="semester-title">
           <strong>{{ (mt.date or '')[:10] }}</strong>
-          {% if 'manage_meetings' in perms %}
           <div style="display:flex;gap:8px">
             <a class="btn small" href="{{ url_for('meeting_edit', mid=mt.id) }}">Правка</a>
             <form method="post" action="{{ url_for('meeting_delete', mid=mt.id) }}"
@@ -335,13 +307,12 @@
               <button class="btn small danger" type="submit">Удалить</button>
             </form>
           </div>
-          {% endif %}
         </div>
         <div style="white-space:pre-wrap">{{ mt.summary }}</div>
       </div>
     {% endfor %}
   {% else %}
-    <div class="empty">Встреч пока не было.</div>
+    <div class="empty">Встреч пока не было. Добавьте первую, чтобы фиксировать итоги 1-на-1.</div>
   {% endif %}
   </div>
 </details>

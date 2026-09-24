@@ -11,7 +11,6 @@ import sqlite3
 import secrets
 import shutil
 import tempfile
-import json
 from datetime import datetime
 from functools import wraps
 
@@ -19,7 +18,6 @@ from flask import (
     Flask, request, redirect, url_for, render_template, session, flash, abort, g,
     send_file,
 )
-from werkzeug.security import check_password_hash, generate_password_hash
 
 try:
     from openpyxl import Workbook
@@ -55,63 +53,7 @@ ADMIN_PASSWORD = os.environ.get("HR_PASSWORD", "")
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("HR_SECRET_KEY", secrets.token_hex(32))
 
-
-@app.context_processor
-def inject_user():
-    cu = current_user()
-    perms = user_perms(cu["id"]) if cu else set()
-    return {
-        "cur_user": cu,
-        "perms": perms,
-        "ROLE_PRESETS": ROLE_PRESETS,
-        "ROLE_LABELS": {k: v["label"] for k, v in ROLE_PRESETS.items()},
-        "PER_META": PERMISSIONS,
-    }
-
 SEMESTERS = {"1H": "I полугодие (янв–июн)", "2H": "II полугодие (июл–дек)"}
-
-# --------------------------------------------------------------------------- #
-# Права и роли (ролевая модель)
-# --------------------------------------------------------------------------- #
-PERMISSIONS = {
-    "view_employees":     "Видеть список и карточки сотрудников",
-    "view_salary":        "Видеть зарплату",
-    "edit_employee":      "Редактировать данные сотрудника",
-    "manage_notes":       "Общие заметки о сотруднике",
-    "manage_semesters":   "Записи полугодий (цели, предложения, отзывы)",
-    "manage_history":     "История должности и зарплаты",
-    "manage_meetings":    "Встречи 1-на-1",
-    "manage_problems":    "Добавлять и отмечать проблемы",
-    "view_problems_pool": "Общий список проблем по всем командам",
-    "view_reports":       "Выгружать отчёты (Excel/PDF)",
-    "view_audit":         "Журнал аудита",
-    "manage_users":       "Управление пользователями и правами",
-}
-
-ROLE_PRESETS = {
-    "owner": {
-        "label": "Владелец",
-        "perms": set(PERMISSIONS.keys()),
-        "scope_all": True,
-    },
-    "manager": {
-        "label": "Руководитель",
-        "perms": {k for k in PERMISSIONS if k != "manage_users"},
-        "scope_all": True,
-    },
-    "teamlead": {
-        "label": "Тимлид",
-        "perms": {"view_employees", "edit_employee", "manage_notes",
-                  "manage_semesters", "manage_history", "manage_meetings",
-                  "manage_problems", "view_problems_pool"},
-        "scope_all": False,
-    },
-    "viewer": {
-        "label": "Наблюдатель",
-        "perms": {"view_employees"},
-        "scope_all": False,
-    },
-}
 
 # --------------------------------------------------------------------------- #
 # БД
@@ -205,53 +147,6 @@ CREATE TABLE IF NOT EXISTS problems (
     text        TEXT NOT NULL DEFAULT '',
     created_at  TEXT DEFAULT (datetime('now'))
 );
-
-CREATE TABLE IF NOT EXISTS users (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    username    TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
-    role        TEXT NOT NULL DEFAULT 'manager',
-    is_active   INTEGER NOT NULL DEFAULT 1,
-    created_at  TEXT DEFAULT (datetime('now')),
-    last_login  TEXT
-);
-
-CREATE TABLE IF NOT EXISTS user_permissions (
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    perm    TEXT NOT NULL,
-    PRIMARY KEY (user_id, perm)
-);
-
-CREATE TABLE IF NOT EXISTS user_permission_denied (
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    perm    TEXT NOT NULL,
-    PRIMARY KEY (user_id, perm)
-);
-
-CREATE TABLE IF NOT EXISTS user_scope (
-    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    department_id INTEGER,
-    PRIMARY KEY (user_id, department_id)
-);
-
-CREATE TABLE IF NOT EXISTS audit_log (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id     INTEGER,
-    action      TEXT,
-    detail      TEXT,
-    ref         TEXT DEFAULT '',
-    target      TEXT DEFAULT '',
-    created_at  TEXT DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS role_templates (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    name        TEXT NOT NULL UNIQUE,
-    perms_json  TEXT NOT NULL DEFAULT '[]',
-    scope_all   INTEGER NOT NULL DEFAULT 0,
-    depart_json TEXT NOT NULL DEFAULT '[]',
-    created_at  TEXT DEFAULT (datetime('now'))
-);
 """
 
 
@@ -290,39 +185,8 @@ def init_db():
     _repair_dangling_fk(db, "meetings", "employee_id")
     _repair_dangling_fk(db, "year_records", "employee_id")
 
-    # Миграция audit_log: колонки ref (для «кто последним редактировал блок») и
-    # target (для кликабельной записи → страница изменения).
-    acols = {r[1] for r in db.execute("PRAGMA table_info(audit_log)").fetchall()}
-    if "ref" not in acols:
-        db.execute("ALTER TABLE audit_log ADD COLUMN ref TEXT DEFAULT ''")
-    if "target" not in acols:
-        db.execute("ALTER TABLE audit_log ADD COLUMN target TEXT DEFAULT ''")
-
-    # Миграция авторизации: если учётных записей нет — создать владельца.
-    if not db.execute("SELECT 1 FROM users LIMIT 1").fetchone():
-        _ensure_owner(db)
-
     db.commit()
     db.close()
-
-
-def _ensure_owner(db):
-    """Создать учётную запись владельца (login=admin, пароль из HR_PASSWORD)."""
-    username = (os.environ.get("HR_ADMIN_USER", "") or "admin").strip()
-    password = ADMIN_PASSWORD or secrets.token_urlsafe(12)
-    # INSERT OR IGNORE — идемпотентно: при одновременном старте нескольких
-    # gunicorn-воркеров владелец создаётся только один раз (гонка безопасна).
-    cur = db.execute(
-        "INSERT OR IGNORE INTO users (username, password_hash, role) VALUES (?,?,?)",
-        (username, generate_password_hash(password), "owner"),
-    )
-    if cur.rowcount == 0:
-        print(f"[TeamBook] Владелец уже существует: {username}")
-        return
-    print(f"[TeamBook] Создана учётная запись владельца: {username}")
-    if not ADMIN_PASSWORD:
-        print(f"[TeamBook] ВНИМАНИЕ: HR_PASSWORD не задан, пароль сгенерирован автоматически: "
-              f"{password}")
 
 
 def _repair_dangling_fk(db, table, fk_col):
@@ -417,379 +281,26 @@ def ensure_auth():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        if _login_attempt():
+        if secrets.compare_digest(request.form.get("password", ""), ADMIN_PASSWORD):
+            session["authed"] = True
             return redirect(url_for("index"))
+        flash("Неверный пароль", "error")
     return render_template("login.html")
 
 
 @app.route("/logout")
 def logout():
-    session.clear()
+    session.pop("authed", None)
     return redirect(url_for("login"))
-
-
-def _login_attempt():
-    """Проверить логин+пароль с rate-limit и хэшированием."""
-    username = (request.form.get("username", "") or "").strip()
-    password = request.form.get("password", "")
-
-    # rate-limit: максимум попыток с одного IP за окно
-    ip = request.remote_addr or "?"
-    now = datetime.now()
-    _clear_stale(now)
-    fails = _failed.get(ip, [])
-    if len(fails) >= 5 and (now - fails[-1]).total_seconds() < 60:
-        flash("Слишком много попыток. Подождите минуту.", "error")
-        return False
-
-    db = get_db()
-    # Если логин не указан — подразумеваем владельца (совместимость со старым входом).
-    if not username:
-        owner = db.execute("SELECT * FROM users WHERE role='owner' ORDER BY id LIMIT 1").fetchone()
-        username = owner["username"] if owner else ""
-
-    user = None
-    if username:
-        row = db.execute("SELECT * FROM users WHERE username=? AND is_active=1",
-                         (username,)).fetchone()
-        if row and check_password_hash(row["password_hash"], password):
-            user = row
-    if user is None and not db.execute("SELECT 1 FROM users LIMIT 1").fetchone():
-        # Переходный режим: учётных записей ещё нет, принять старый мастер-пароль.
-        if ADMIN_PASSWORD and secrets.compare_digest(password, ADMIN_PASSWORD):
-            user = db.execute("SELECT * FROM users WHERE role='owner' ORDER BY id LIMIT 1").fetchone()
-
-    if user is None:
-        _failed.setdefault(ip, []).append(now)
-        flash("Неверный логин или пароль", "error")
-        return False
-
-    session.clear()
-    session["uid"] = user["id"]
-    session["username"] = user["username"]
-    session["role"] = user["role"]
-    session["authed"] = True
-    db.execute("UPDATE users SET last_login=? WHERE id=?", (now.isoformat(), user["id"]))
-    _audit(db, user["id"], "login", username)
-    db.commit()
-    return True
-
-
-# попытки входа по IP (in-memory rate-limit)
-_failed = {}
-_FAIL_LIMIT = 5
-_WINDOW_S = 120  # окно (сек)
-
-def _clear_stale(now):
-    for ip in list(_failed):
-        _failed[ip] = [t for t in _failed[ip] if (now - t).total_seconds() < _WINDOW_S * 2]
-        if not _failed[ip]:
-            del _failed[ip]
-
-
-def _audit(db, user_id, action, detail="", ref="", target=""):
-    try:
-        db.execute(
-            "INSERT INTO audit_log (user_id, action, detail, ref, target) VALUES (?,?,?,?,?)",
-            (user_id, action, str(detail)[:500], ref or "", target or ""))
-    except Exception:
-        pass
-
-
-# Человеко-читаемые описания write-эндпоинтов для журнала аудита.
-# Ключ — endpoint Flask; значение — шаблон описания. {n} подставляется из kwargs.
-_AUDIT_LABELS = {
-    "employee_new":        "Создал сотрудника",
-    "employee_edit":       "Изменил сотрудника {eid}",
-    "employee_delete":     "Удалил сотрудника {eid}",
-    "employee_notes":      "Изменил заметки сотрудника {eid}",
-    "record_save":         "Сохранил полугодовую запись сотрудника {eid}",
-    "record_delete":       "Удалил полугодовую запись {rid}",
-    "employee_year_new":   "Создал год сотруднику {eid}",
-    "employee_year_delete":"Удалил год сотруднику {eid}",
-    "history_add":         "Добавил запись истории сотруднику {eid}",
-    "history_edit":        "Изменил запись истории {hid}",
-    "history_delete":      "Удалил запись истории {hid}",
-    "meeting_new":         "Добавил встречу сотруднику {eid}",
-    "meeting_edit":        "Изменил встречу {mid}",
-    "meeting_delete":      "Удалил встречу {mid}",
-    "problem_add":         "Добавил проблему сотруднику {eid}",
-    "problem_add_general": "Добавил проблему (из общего списка)",
-    "problem_delete":      "Отметил проблему решённой {pid}",
-    "catalog_add":         "Добавил в справочник", 
-    "catalog_rename":      "Переименовал в справочнике",
-    "catalog_delete":      "Удалил из справочника",
-    "user_new":            "Создал учётную запись",
-    "user_edit":           "Изменил учётную запись {uid}",
-    "user_password":       "Сбросил пароль учётной записи {uid}",
-    "user_delete":         "Удалил учётную запись {uid}",
-    "my_password":         "Сменил свой пароль",
-}
-
-
-@app.after_request
-def _audit_after(resp):
-    """Логировать в журнал все write-запросы (POST), кроме входа/выхода."""
-    if request.method != "POST":
-        return resp
-    ep = request.endpoint or ""
-    if ep in ("login", "logout", "static") or not session.get("uid"):
-        return resp
-    label = _AUDIT_LABELS.get(ep, ep)
-    try:
-        detail = label.format(**request.view_args or {})
-    except Exception:
-        detail = label
-    try:
-        db = get_db()
-        detail = _audit_resolve_names(db, detail, request.view_args or {})
-        ref, target = _audit_ctx(db, ep, request.view_args or {})
-        _audit(db, session["uid"], "write", detail, ref=ref, target=target)
-        db.commit()
-    except Exception:
-        pass
-    return resp
-
-
-# ref-префиксы блоков карточки сотрудника: тип -> базовая таблица для поиска employee_id
-_AUDIT_BLOCK = {
-    "employee_notes":     ("notes",     None),
-    "history_add":        ("history",   None),
-    "history_edit":       ("history",   "employee_history"),
-    "history_delete":     ("history",   "employee_history"),
-    "meeting_new":        ("meetings",  None),
-    "meeting_edit":       ("meetings",  "meetings"),
-    "meeting_delete":     ("meetings",  "meetings"),
-    "problem_add":        ("problems",  None),
-    "problem_delete":     ("problems",  "problems"),
-    "problem_add_general":("problems_pool", None),
-    "record_save":        ("records",   None),
-    "record_delete":      ("records",   "year_records"),
-    "employee_year_new":  ("records",   None),
-    "employee_year_delete":("records",  None),
-    "employee_edit":      ("employee",  None),
-}
-
-# target-страницы для кликабельных записей аудита
-_AUDIT_TARGET = {
-    "employee_edit":       "employee_view",
-    "employee_notes":      "employee_view",
-    "history_add":         "employee_view",
-    "history_edit":        "employee_view",
-    "history_delete":      "employee_view",
-    "meeting_new":         "employee_view",
-    "meeting_edit":        "employee_view",
-    "meeting_delete":      "employee_view",
-    "problem_add":         "employee_view",
-    "problem_delete":      "employee_view",
-    "problem_add_general": "problems_page",
-    "record_save":         "employee_view",
-    "record_delete":       "employee_view",
-    "employee_year_new":   "employee_view",
-    "employee_year_delete":"employee_view",
-    "employee_new":        "index",
-    "catalog_add":         "catalogs",
-    "catalog_rename":      "catalogs",
-    "catalog_delete":      "catalogs",
-    "user_new":            "users_page",
-    "user_edit":           "users_page",
-    "user_password":       "users_page",
-    "user_delete":         "users_page",
-    "my_password":         "index",
-    "template_delete":     "users_page",
-    "user_save_template":  "users_page",
-    "user_apply_template": "users_page",
-}
-
-
-def _audit_ctx(db, ep, view_args):
-    """Вернуть (ref, target_url) для записи аудита.
-
-    ref — ключ блока сотрудника ('history:12', 'notes:12', 'records:12', ...)
-    для показа «кто последним редактировал блок»; '' если не применимо.
-    target_url — абсолютный путь страницы, куда вести клик по записи.
-    """
-    eid = view_args.get("eid")
-    kind = None
-    block = _AUDIT_BLOCK.get(ep)
-    if block:
-        kind, lookup = block
-        if eid is None and lookup:
-            row = db.execute("SELECT employee_id FROM %s WHERE id=?" % lookup,
-                             (view_args.get("hid") or view_args.get("mid")
-                              or view_args.get("pid") or view_args.get("rid"),)).fetchone()
-            eid = row["employee_id"] if row else None
-    ref = ("%s:%s" % (kind, eid)) if (kind and eid) else (kind or "")
-    # целевая страница клика
-    tgt = _AUDIT_TARGET.get(ep, "")
-    url = ""
-    try:
-        if not tgt:
-            url = ""
-        elif tgt == "employee_view" and eid:
-            url = url_for("employee_view", eid=eid)
-        else:
-            url = url_for(tgt)
-    except Exception:
-        url = ""
-    return ref, url
-
-
-def _last_block_editors(db, eid):
-    """Кто последним редактировал каждый блок карточки сотрудника.
-
-    Возвращает dict {тип_блока: username}. Берём самую свежую запись аудита
-    с ref 'тип:eid' по каждому типу блока.
-    """
-    kinds = ("employee", "notes", "history", "records", "meetings", "problems")
-    result = {}
-    for kind in kinds:
-        row = db.execute(
-            """SELECT u.username, a.created_at
-               FROM audit_log a LEFT JOIN users u ON u.id=a.user_id
-               WHERE a.ref=? ORDER BY a.id DESC LIMIT 1""",
-            ("%s:%s" % (kind, eid),)).fetchone()
-        if row and row["username"]:
-            result[kind] = row["username"]
-    return result
-
-
-def _resolve_name(db, table, cid, column="name"):
-    """Вернуть имя строки таблицы по id или '#'+id, если она не найдена."""
-    row = db.execute("SELECT %s AS n FROM %s WHERE id=?" % (column, table),
-                     (cid,)).fetchone()
-    if row and row["n"]:
-        return str(row["n"])
-    return "#%s" % cid
-
-
-def _audit_resolve_names(db, detail, view_args):
-    """Заменить в детали аудита id сотрудника/учётки/записи на имена.
-
-    В детали встречаются токены вида '{eid}', '{uid}', '{rid}', '{hid}',
-    '{mid}', '{pid}' — подставляем человекочитаемые имена, а не голые id.
-    """
-    if "eid" in view_args:
-        detail = detail.replace(str(view_args["eid"]),
-                                _resolve_name(db, "employees", view_args["eid"]))
-    if "uid" in view_args:
-        detail = detail.replace(str(view_args["uid"]),
-                                _resolve_name(db, "users", view_args["uid"], "username"))
-    emap = {  # запись -> таблица, через которую ищем сотрудника
-        "rid": "year_records",
-        "hid": "employee_history",
-        "mid": "meetings",
-        "pid": "problems",
-    }
-    for key, table in emap.items():
-        if key not in view_args:
-            continue
-        cid = view_args[key]
-        row = db.execute("SELECT employee_id FROM %s WHERE id=?" % table, (cid,)).fetchone()
-        if row:
-            emp = _resolve_name(db, "employees", row["employee_id"])
-            detail = detail.replace(str(cid), "%s (%s)" % (cid, emp))
-        else:
-            detail = detail.replace(str(cid), "#%s" % cid)
-    return detail
 
 
 def login_required(f):
     @wraps(f)
     def wrapped(*args, **kwargs):
-        if not session.get("authed") or not session.get("uid"):
+        if not session.get("authed"):
             return redirect(url_for("login"))
         return f(*args, **kwargs)
     return wrapped
-
-
-def current_user():
-    """Текущий пользователь из БД (по id в сессии)."""
-    uid = session.get("uid")
-    if not uid:
-        return None
-    db = get_db()
-    return db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
-
-
-def user_perms(uid):
-    """Множество прав пользователя: (права роли ∪ индивидуальные) − снятые.
-
-    Позволяет гибко отзывать ролевые права и добавлять любые дополнительные."""
-    db = get_db()
-    row = db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
-    if not row:
-        return set()
-    base = set(ROLE_PRESETS.get(row["role"], {}).get("perms", set()))
-    granted = {r["perm"] for r in db.execute(
-        "SELECT perm FROM user_permissions WHERE user_id=?", (uid,))}
-    denied = {r["perm"] for r in db.execute(
-        "SELECT perm FROM user_permission_denied WHERE user_id=?", (uid,))}
-    return (base | granted) - denied
-
-
-def user_scope(uid):
-    """Доступные отделы пользователя + флаг 'все'."""
-    db = get_db()
-    row = db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
-    scope_all = bool(ROLE_PRESETS.get(row["role"], {}).get("scope_all")) if row else False
-    deps = [r["department_id"] for r in db.execute(
-        "SELECT department_id FROM user_scope WHERE user_id=? AND department_id IS NOT NULL",
-        (uid,))]
-    return {"all": scope_all, "departments": deps}
-
-
-def can(uid, perm):
-    return perm in user_perms(uid)
-
-
-def scope_filter(db, uid, alias=""):
-    """SQL-условие, ограничивающее выборку сотрудников областью пользователя.
-    Возвращает (where_sql, params). alias — префикс таблицы employees ('e')."""
-    px = (alias + ".") if alias else ""
-    sc = user_scope(uid)
-    if sc["all"]:
-        return "1=1", []
-    if not sc["departments"]:
-        return "0=1", []
-    marks = ",".join("?" * len(sc["departments"]))
-    return f"{px}department_id IN ({marks})", sc["departments"]
-
-
-def _employee_in_scope(db, uid, emp):
-    """Принадлежит ли сотрудник (Row из запроса) области видимости пользователя."""
-    sc = user_scope(uid)
-    if sc["all"]:
-        return True
-    # у сотрудника может не быть отдела (department_id None) — тогда видит только owner
-    dep = emp["department_id"] if "department_id" in emp.keys() else emp["department"]
-    if dep is None:
-        return False
-    return dep in sc["departments"]
-
-
-def _emp_scope_or_403(db, eid, perm=None):
-    """Сотрудник существует, в скоупе пользователя и (опц.) есть право -> 403 иначе."""
-    if perm and not can(session.get("uid"), perm):
-        abort(403)
-    emp = db.execute("SELECT id, department_id FROM employees WHERE id=?", (eid,)).fetchone()
-    if not emp or not _employee_in_scope(db, session["uid"], emp):
-        abort(403)
-    return emp
-
-
-def _require(perm):
-    """Декоратор: требует право, иначе 403."""
-    def deco(f):
-        @wraps(f)
-        def wrapped(*args, **kwargs):
-            if not session.get("authed"):
-                return redirect(url_for("login"))
-            if not can(session["uid"], perm):
-                abort(403)
-            return f(*args, **kwargs)
-        return wrapped
-    return deco
 
 
 # --------------------------------------------------------------------------- #
@@ -821,14 +332,6 @@ def index():
     if position:
         where.append("p.name = ?")
         params.append(position)
-    # Ограничение области видимости (тимелеады видят только свои отделы)
-    if not can(session.get("uid"), "view_employees"):
-        return render_template("index.html", employees=[], departments=[], positions=[],
-                               sel_department="", sel_position="", sel_q="",
-                               now_year=datetime.now().year, _no_perm=True)
-    sc_sql, sc_params = scope_filter(db, session["uid"], "e")
-    where.append(sc_sql)
-    params += sc_params
 
     rows = db.execute(
         f"""
@@ -842,12 +345,9 @@ def index():
         tuple(params),
     ).fetchall()
 
-    can_salary = can(session["uid"], "view_salary")
     employees = [
         {"id": r["id"], "name": r["name"], "position": r["position"],
-         "department": r["department"],
-         "salary": r["salary"] if can_salary else "",
-         "tags": []}
+         "department": r["department"], "salary": r["salary"], "tags": []}
         for r in rows
     ]
 
@@ -910,8 +410,6 @@ TAG_COLORS = ["#5B8DEF", "#E4572E", "#1B998B", "#E9C46A", "#C44536",
 @app.route("/catalog/<kind>/add", methods=["POST"])
 @login_required
 def catalog_add(kind):
-    if not can(session["uid"], "edit_employee"):
-        abort(403)
     if kind not in ("position", "department", "tag"):
         abort(404)
     name = request.form.get("name", "").strip()
@@ -936,8 +434,6 @@ def catalog_add(kind):
 @app.route("/catalog/<kind>/<int:cid>/rename", methods=["POST"])
 @login_required
 def catalog_rename(kind, cid):
-    if not can(session["uid"], "edit_employee"):
-        abort(403)
     if kind not in ("position", "department", "tag"):
         abort(404)
     name = request.form.get("name", "").strip()
@@ -957,8 +453,6 @@ def catalog_rename(kind, cid):
 @app.route("/catalog/<kind>/<int:cid>/delete", methods=["POST"])
 @login_required
 def catalog_delete(kind, cid):
-    if not can(session["uid"], "edit_employee"):
-        abort(403)
     if kind not in ("position", "department", "tag"):
         abort(404)
     db = get_db()
@@ -1020,10 +514,6 @@ def _clean_int(val):
 
 def _save_employee(eid):
     db = get_db()
-    if not can(session.get("uid"), "edit_employee"):
-        abort(403)
-    if eid is not None:
-        _emp_scope_or_403(db, eid)
     name = request.form.get("name", "").strip()
     if not name:
         flash("Имя обязательно", "error")
@@ -1088,9 +578,6 @@ def employee_view(eid):
     ).fetchone()
     if not emp:
         abort(404)
-    # Проверка доступа к сотруднику по области видимости пользователя
-    if not _employee_in_scope(db, session["uid"], emp) or not can(session["uid"], "view_employees"):
-        abort(403)
     years = db.execute(
         "SELECT DISTINCT year FROM year_records WHERE employee_id=? ORDER BY year DESC",
         (eid,),
@@ -1135,9 +622,6 @@ def employee_view(eid):
     ).fetchall()
     positions, _ = _cat_options(db)
 
-    # Кто последним редактировал каждый блок карточки (по журналу аудита)
-    editors = _last_block_editors(db, eid)
-
     return render_template(
         "employee_view.html",
         emp=emp,
@@ -1151,8 +635,6 @@ def employee_view(eid):
         emp_tags=emp_tags,
         problems=problems,
         now_year=datetime.now().year,
-        can_salary=can(session["uid"], "view_salary"),
-        editors=editors,
     )
 
 
@@ -1160,7 +642,6 @@ def employee_view(eid):
 @login_required
 def employee_delete(eid):
     db = get_db()
-    _emp_scope_or_403(db, eid, "edit_employee")
     db.execute("DELETE FROM employees WHERE id=?", (eid,))
     db.commit()
     flash("Сотрудник удалён", "ok")
@@ -1171,7 +652,6 @@ def employee_delete(eid):
 @login_required
 def employee_notes(eid):
     db = get_db()
-    _emp_scope_or_403(db, eid, "manage_notes")
     notes = request.form.get("notes", "")
     db.execute("UPDATE employees SET notes=? WHERE id=?", (notes, eid))
     db.commit()
@@ -1183,7 +663,6 @@ def employee_notes(eid):
 @login_required
 def history_add(eid):
     db = get_db()
-    _emp_scope_or_403(db, eid, "manage_history")
     change_date = request.form.get("change_date", "").strip()
     if not change_date:
         flash("Дата изменения обязательна", "error")
@@ -1206,7 +685,6 @@ def history_edit(hid):
     rec = db.execute("SELECT * FROM employee_history WHERE id=?", (hid,)).fetchone()
     if not rec:
         abort(404)
-    _emp_scope_or_403(db, rec["employee_id"], "manage_history")
     change_date = request.form.get("change_date", rec["change_date"]).strip()
     db.execute(
         "UPDATE employee_history SET change_date=?, position_id=?, salary=?, note=? WHERE id=?",
@@ -1224,7 +702,6 @@ def history_delete(hid):
     db = get_db()
     rec = db.execute("SELECT * FROM employee_history WHERE id=?", (hid,)).fetchone()
     if rec:
-        _emp_scope_or_403(db, rec["employee_id"], "manage_history")
         db.execute("DELETE FROM employee_history WHERE id=?", (hid,))
         db.commit()
         flash("Запись истории удалена", "ok")
@@ -1239,7 +716,6 @@ def history_delete(hid):
 @login_required
 def record_save(eid):
     db = get_db()
-    _emp_scope_or_403(db, eid, "manage_semesters")
     year = request.form.get("year", "0").strip()
     semester = request.form.get("semester", "").strip()
     try:
@@ -1279,7 +755,6 @@ def record_delete(rid):
     db = get_db()
     rec = db.execute("SELECT * FROM year_records WHERE id=?", (rid,)).fetchone()
     if rec:
-        _emp_scope_or_403(db, rec["employee_id"], "manage_semesters")
         eid, year = rec["employee_id"], rec["year"]
         db.execute("DELETE FROM year_records WHERE id=?", (rid,))
         db.commit()
@@ -1292,7 +767,6 @@ def record_delete(rid):
 def employee_year_new(eid):
     """Создать каркас года для сотрудника: две пустые полугодовые записи (1H, 2H)."""
     db = get_db()
-    _emp_scope_or_403(db, eid, "manage_semesters")
     try:
         year = int(request.form.get("year", "").strip())
     except ValueError:
@@ -1314,7 +788,6 @@ def employee_year_new(eid):
 def employee_year_delete(eid):
     """Удалить год целиком: все полугодовые записи (1H, 2H) сотрудника за год."""
     db = get_db()
-    _emp_scope_or_403(db, eid, "manage_semesters")
     try:
         year = int(request.form.get("year", "").strip())
     except ValueError:
@@ -1339,7 +812,6 @@ def employee_year_delete(eid):
 @login_required
 def meeting_new(eid):
     db = get_db()
-    _emp_scope_or_403(db, eid, "manage_meetings")
     if request.method == "POST":
         date = request.form.get("date", "") or datetime.now().strftime("%Y-%m-%d")
         db.execute(
@@ -1359,7 +831,6 @@ def meeting_edit(mid):
     mt = db.execute("SELECT * FROM meetings WHERE id=?", (mid,)).fetchone()
     if not mt:
         abort(404)
-    _emp_scope_or_403(db, mt["employee_id"], "manage_meetings")
     if request.method == "POST":
         date = request.form.get("date", mt["date"])
         db.execute(
@@ -1379,7 +850,6 @@ def meeting_delete(mid):
     db = get_db()
     mt = db.execute("SELECT * FROM meetings WHERE id=?", (mid,)).fetchone()
     if mt:
-        _emp_scope_or_403(db, mt["employee_id"], "manage_meetings")
         db.execute("DELETE FROM meetings WHERE id=?", (mid,))
         db.commit()
         return redirect(url_for("employee_view", eid=mt["employee_id"]))
@@ -1392,43 +862,28 @@ def meeting_delete(mid):
 @app.route("/problems")
 @login_required
 def problems_page():
-    """Общий список: сотрудники, у которых есть зафиксированные проблемы.
-
-    Право view_problems_pool = видеть проблемы ВСЕХ команд (без ограничения по
-    отделам). Без него пользователь видит только проблемы в своей области."""
-    if not can(session["uid"], "view_problems_pool"):
-        abort(403)
+    """Общий список: сотрудники, у которых есть зафиксированные проблемы."""
     db = get_db()
-    # «по всем командам» — без скоупа; иначе — только свои отделы
-    all_mode = can(session["uid"], "view_problems_pool")
-    sc_sql, sc_params = ("1=1", []) if all_mode else scope_filter(db, session["uid"], "e")
     rows = db.execute(
-        f"""SELECT e.id AS eid, e.name AS name, p.id AS pid, p.text AS text, p.created_at
-          FROM problems p
-          JOIN employees e ON e.id = p.employee_id
-          WHERE {sc_sql}
-          ORDER BY e.name COLLATE NOCASE, p.id DESC""",
-        sc_params,
+        """SELECT e.id AS eid, e.name AS name, p.id AS pid, p.text AS text, p.created_at
+           FROM problems p
+           JOIN employees e ON e.id = p.employee_id
+           ORDER BY e.name COLLATE NOCASE, p.id DESC""",
     ).fetchall()
     # сгруппировать по сотруднику
     by_emp = {}
     for r in rows:
         by_emp.setdefault(r["eid"], {"name": r["name"], "problems": []})["problems"].append(r)
-    sc_sql2, sc_params2 = ("1=1", []) if all_mode else scope_filter(db, session["uid"])
-    employees = db.execute(
-        f"SELECT id, name FROM employees WHERE {sc_sql2} ORDER BY name COLLATE NOCASE",
-        sc_params2,
-    ).fetchall()
+    employees = db.execute("SELECT id, name FROM employees ORDER BY name COLLATE NOCASE").fetchall()
     return render_template("problems.html", by_emp=by_emp, employees=employees)
 
 
 @app.route("/employee/<int:eid>/problem/add", methods=["POST"])
 @login_required
 def problem_add(eid):
-    db = get_db()
-    _emp_scope_or_403(db, eid, "manage_problems")
     text = request.form.get("text", "").strip()
     if text:
+        db = get_db()
         db.execute("INSERT INTO problems (employee_id, text) VALUES (?,?)", (eid, text))
         db.commit()
         flash("Проблема добавлена", "ok")
@@ -1443,7 +898,6 @@ def problem_add_general():
     text = request.form.get("text", "").strip()
     if eid and text:
         db = get_db()
-        _emp_scope_or_403(db, eid, "manage_problems")
         db.execute("INSERT INTO problems (employee_id, text) VALUES (?,?)", (eid, text))
         db.commit()
         flash("Проблема добавлена", "ok")
@@ -1456,298 +910,11 @@ def problem_delete(pid):
     db = get_db()
     p = db.execute("SELECT * FROM problems WHERE id=?", (pid,)).fetchone()
     if p:
-        _emp_scope_or_403(db, p["employee_id"], "manage_problems")
         db.execute("DELETE FROM problems WHERE id=?", (pid,))
         db.commit()
         flash("Проблема удалена", "ok")
         return redirect(url_for("employee_view", eid=p["employee_id"]))
     abort(404)
-
-
-# --------------------------------------------------------------------------- #
-# Управление пользователями и правами
-# --------------------------------------------------------------------------- #
-def _get_employee_ids_for_departments(db, dep_ids):
-    if not dep_ids:
-        return []
-    marks = ",".join("?" * len(dep_ids))
-    return [r["id"] for r in db.execute(
-        f"SELECT id FROM employees WHERE department_id IN ({marks})", dep_ids)]
-
-
-def _get_visible_employees(db, uid):
-    """Список id сотрудников, доступных пользователю."""
-    sc = user_scope(uid)
-    if sc["all"]:
-        return [r["id"] for r in db.execute("SELECT id FROM employees")]
-    return _get_employee_ids_for_departments(db, sc["departments"])
-
-
-@app.route("/users")
-@login_required
-@_require("manage_users")
-def users_page():
-    db = get_db()
-    users = db.execute(
-        "SELECT u.*, (SELECT COUNT(*) FROM user_scope s WHERE s.user_id=u.id) s_cnt, "
-        "(SELECT GROUP_CONCAT(d.name) FROM user_scope s JOIN departments d ON d.id=s.department_id "
-        " WHERE s.user_id=u.id) s_names "
-        "FROM users u ORDER BY u.role, u.username").fetchall()
-    departments = db.execute("SELECT * FROM departments ORDER BY name").fetchall()
-    templates = db.execute("SELECT * FROM role_templates ORDER BY name").fetchall()
-    return render_template("users.html", users=users, departments=departments,
-                           templates=templates)
-
-
-@app.route("/users/new", methods=["GET", "POST"])
-@login_required
-@_require("manage_users")
-def user_new():
-    db = get_db()
-    departments = db.execute("SELECT * FROM departments ORDER BY name").fetchall()
-    if request.method == "POST":
-        username = request.form.get("username", "").strip()
-        password = request.form.get("password", "").strip()
-        role = request.form.get("role", "viewer")
-        if not username or not password:
-            flash("Логин и пароль обязательны", "error")
-        elif role not in ROLE_PRESETS:
-            flash("Недопустимая роль", "error")
-        else:
-            try:
-                cur = db.execute(
-                    "INSERT INTO users (username, password_hash, role) VALUES (?,?,?)",
-                    (username, generate_password_hash(password), role))
-                uid = cur.lastrowid
-                _save_user_rights(db, uid, request.form, role, default_to_role=True)
-                db.commit()
-                flash(f"Пользователь «{username}» создан", "ok")
-                return redirect(url_for("users_page"))
-            except sqlite3.IntegrityError:
-                flash(f"Логин «{username}» уже занят", "error")
-    return render_template("user_form.html", user={}, departments=departments,
-                            title="Новый пользователь", role_default="teamlead")
-
-
-@app.route("/users/<int:uid>/edit", methods=["GET", "POST"])
-@login_required
-@_require("manage_users")
-def user_edit(uid):
-    db = get_db()
-    user = db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
-    if not user:
-        abort(404)
-    # защита владельца: править владельца может только владелец
-    current = db.execute("SELECT * FROM users WHERE id=?", (session["uid"],)).fetchone()
-    if user["role"] == "owner" and not (current and current["role"] == "owner"):
-        abort(403)
-    # владельца запрещаем править самому себе / удалить владельца нельзя
-    departments = db.execute("SELECT * FROM departments ORDER BY name").fetchall()
-    cur_perms = user_perms(uid)
-    role_perms = set(ROLE_PRESETS.get(user["role"], {}).get("perms", set()))
-    scope = user_scope(uid)
-    scope_deps = tuple(scope["departments"])
-    if request.method == "POST":
-        role = request.form.get("role", user["role"])
-        is_active = 1 if request.form.get("is_active") == "1" else 0
-        if role not in ROLE_PRESETS:
-            flash("Недопустимая роль", "error")
-        else:
-            db.execute("UPDATE users SET role=?, is_active=? WHERE id=?",
-                       (role, is_active, uid))
-            _save_user_rights(db, uid, request.form, role)
-            db.commit()
-            flash("Права обновлены", "ok")
-            return redirect(url_for("users_page"))
-    return render_template("user_form.html", user=user, departments=departments,
-                           title="Редактирование пользователя",
-                           role_default=user["role"], cur_perms=cur_perms,
-                           role_perms=role_perms, scope_deps=scope_deps,
-                           scope_all=scope["all"],
-                           templates=db.execute(
-                               "SELECT * FROM role_templates ORDER BY name").fetchall())
-
-
-def _save_user_rights(db, uid, form, role, default_to_role=False):
-    """Записать права пользователя из формы.
-
-    Форма шлёт ПОЛНЫЙ список отмеченных прав ('perms'). Вычисляем индивидуальные
-    дополнения ('user_permissions') и снятия ролевых прав ('user_permission_denied').
-    Это даёт максимально гибкую настройку: любую галку можно и поставить, и снять.
-    default_to_role=True — при создании пользователя без явного выбора даётся
-    полный пресет роли (ничего не снято)."""
-    base = set(ROLE_PRESETS.get(role, {}).get("perms", set()))
-    chosen = {p for p in form.getlist("perms") if p in PERMISSIONS}
-    if default_to_role and not form.getlist("perms"):
-        chosen = base
-
-    db.execute("DELETE FROM user_permissions WHERE user_id=?", (uid,))
-    db.execute("DELETE FROM user_permission_denied WHERE user_id=?", (uid,))
-    db.execute("DELETE FROM user_scope WHERE user_id=?", (uid,))
-    # добавленные права, которых нет в роли
-    for perm in chosen - base:
-        db.execute("INSERT OR IGNORE INTO user_permissions (user_id, perm) VALUES (?,?)",
-                   (uid, perm))
-    # снятые права, которые даёт роль
-    for perm in base - chosen:
-        db.execute("INSERT OR IGNORE INTO user_permission_denied (user_id, perm) VALUES (?,?)",
-                   (uid, perm))
-    # область: отделы
-    scope_all = form.get("scope_all") == "1"
-    dep_ids = {_clean_int(v) for v in form.getlist("departments")}
-    dep_ids.discard(None)
-    if scope_all:
-        db.execute("INSERT INTO user_scope (user_id, department_id) VALUES (?, NULL)",
-                   (uid,))
-    else:
-        for d in dep_ids:
-            db.execute("INSERT OR IGNORE INTO user_scope (user_id, department_id) VALUES (?,?)",
-                       (uid, d))
-
-
-def _protect_owner(db, user):
-    """Запретить менять владельца кому-либо, кроме самого владельца."""
-    cur = db.execute("SELECT * FROM users WHERE id=?", (session["uid"],)).fetchone()
-    if user["role"] == "owner" and not (cur and cur["role"] == "owner"):
-        abort(403)
-
-
-@app.route("/users/<int:uid>/save-template", methods=["POST"])
-@login_required
-@_require("manage_users")
-def user_save_template(uid):
-    """Сохранить текущий набор прав и область пользователя как именованный шаблон."""
-    db = get_db()
-    user = db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
-    if not user:
-        abort(404)
-    _protect_owner(db, user)
-    name = request.form.get("name", "").strip()
-    if not name:
-        flash("Введите имя шаблона", "error")
-        return redirect(url_for("user_edit", uid=uid))
-    perms = sorted(user_perms(uid))
-    if "manage_users" in perms:  # нельзя сохранять в шаблон владельческие права
-        perms = [p for p in perms if p != "manage_users"]
-    sc = user_scope(uid)
-    try:
-        db.execute("INSERT INTO role_templates (name, perms_json, scope_all, depart_json) "
-                   "VALUES (?,?,?,?)",
-                   (name, json.dumps(perms, ensure_ascii=False),
-                    int(sc["all"]), json.dumps(sc["departments"])))
-        db.commit()
-        flash(f"Шаблон «{name}» сохранён", "ok")
-    except sqlite3.IntegrityError:
-        flash(f"Шаблон «{name}» уже существует", "error")
-    return redirect(url_for("user_edit", uid=uid))
-
-
-@app.route("/users/<int:uid>/apply-template/<int:tid>", methods=["POST"])
-@login_required
-@_require("manage_users")
-def user_apply_template(uid, tid):
-    """Применить сохранённый шаблон прав к пользователю."""
-    db = get_db()
-    user = db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
-    tpl = db.execute("SELECT * FROM role_templates WHERE id=?", (tid,)).fetchone()
-    if not user or not tpl:
-        abort(404)
-    _protect_owner(db, user)
-    perms = json.loads(tpl["perms_json"] or "[]")
-    base = set(ROLE_PRESETS.get(user["role"], {}).get("perms", set()))
-    chosen = set(perms)
-    db.execute("DELETE FROM user_permissions WHERE user_id=?", (uid,))
-    db.execute("DELETE FROM user_permission_denied WHERE user_id=?", (uid,))
-    db.execute("DELETE FROM user_scope WHERE user_id=?", (uid,))
-    for perm in chosen - base:
-        db.execute("INSERT OR IGNORE INTO user_permissions (user_id, perm) VALUES (?,?)",
-                   (uid, perm))
-    for perm in base - chosen:
-        db.execute("INSERT OR IGNORE INTO user_permission_denied (user_id, perm) VALUES (?,?)",
-                   (uid, perm))
-    scope_all = tpl["scope_all"]
-    deps = json.loads(tpl["depart_json"] or "[]")
-    if scope_all:
-        db.execute("INSERT INTO user_scope (user_id, department_id) VALUES (?, NULL)", (uid,))
-    else:
-        for d in deps:
-            db.execute("INSERT OR IGNORE INTO user_scope (user_id, department_id) VALUES (?,?)",
-                       (uid, d))
-    db.commit()
-    flash(f"Шаблон «{tpl['name']}» применён", "ok")
-    return redirect(url_for("user_edit", uid=uid))
-
-
-@app.route("/templates/<int:tid>/delete", methods=["POST"])
-@login_required
-@_require("manage_users")
-def template_delete(tid):
-    db = get_db()
-    db.execute("DELETE FROM role_templates WHERE id=?", (tid,))
-    db.commit()
-    flash("Шаблон удалён", "ok")
-    return redirect(url_for("users_page"))
-
-
-@app.route("/users/<int:uid>/password", methods=["POST"])
-@login_required
-@_require("manage_users")
-def user_password(uid):
-    db = get_db()
-    user = db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
-    if not user:
-        abort(404)
-    # защита владельца: сменить пароль владельца может только владелец
-    current = db.execute("SELECT * FROM users WHERE id=?", (session["uid"],)).fetchone()
-    if user["role"] == "owner" and not (current and current["role"] == "owner"):
-        abort(403)
-    pw = request.form.get("password", "").strip()
-    if not pw:
-        flash("Новый пароль не может быть пустым", "error")
-    else:
-        db.execute("UPDATE users SET password_hash=? WHERE id=?",
-                   (generate_password_hash(pw), uid))
-        db.commit()
-        flash("Пароль сброшен", "ok")
-    return redirect(url_for("users_page"))
-
-
-@app.route("/users/<int:uid>/delete", methods=["POST"])
-@login_required
-@_require("manage_users")
-def user_delete(uid):
-    db = get_db()
-    user = db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
-    if not user:
-        abort(404)
-    if user["role"] == "owner":
-        flash("Нельзя удалить владельца", "error")
-        return redirect(url_for("users_page"))
-    db.execute("DELETE FROM users WHERE id=?", (uid,))
-    db.commit()
-    flash(f"Пользователь «{user['username']}» удалён", "ok")
-    return redirect(url_for("users_page"))
-
-
-@app.route("/me/password", methods=["GET", "POST"])
-@login_required
-def my_password():
-    if request.method == "POST":
-        old = request.form.get("old", "")
-        new = request.form.get("new", "").strip()
-        db = get_db()
-        user = db.execute("SELECT * FROM users WHERE id=?", (session["uid"],)).fetchone()
-        if not check_password_hash(user["password_hash"], old):
-            flash("Текущий пароль неверный", "error")
-        elif len(new) < 6:
-            flash("Новый пароль минимум 6 символов", "error")
-        else:
-            db.execute("UPDATE users SET password_hash=? WHERE id=?",
-                       (generate_password_hash(new), user["id"]))
-            db.commit()
-            flash("Пароль изменён", "ok")
-            return redirect(url_for("index"))
-    return render_template("password_form.html")
 
 
 # --------------------------------------------------------------------------- #
@@ -1839,18 +1006,16 @@ def _report_data(db, eid=None, year=None):
     """Собрать строки отчёта: по всем сотрудникам или по одному (eid)."""
     year = year or datetime.now().year
     if eid is None:
-        sc_sql, sc_params = scope_filter(db, session["uid"], "e")
         rows = db.execute(
-            f"""
+            """
             SELECT e.id, e.name, e.salary, e.hire_date,
                    p.name AS position, d.name AS department
             FROM employees e
             LEFT JOIN positions p ON p.id = e.position_id
             LEFT JOIN departments d ON d.id = e.department_id
-            WHERE e.active = 1 AND {sc_sql}
+            WHERE e.active = 1
             ORDER BY d.name, e.name
-            """,
-            sc_params,
+            """
         ).fetchall()
         emp_ids = [r["id"] for r in rows]
         by_id = {r["id"]: r for r in rows}
@@ -2105,8 +1270,6 @@ def _build_employee_pdf(data, title):
 @login_required
 def report_all():
     """Скачать отчёт по всем сотрудникам за выбранный год (Excel или PDF)."""
-    if not can(session["uid"], "view_reports"):
-        abort(403)
     db = get_db()
     year = request.args.get("year", type=int) or datetime.now().year
     fmt = request.args.get("format", "xlsx").lower().strip()
@@ -2151,14 +1314,9 @@ def report_all():
 @login_required
 def report_employee(eid):
     """Скачать отчёт по одному сотруднику за выбранный год (Excel или PDF)."""
-    if not can(session["uid"], "view_reports"):
-        abort(403)
     db = get_db()
     year = request.args.get("year", type=int) or datetime.now().year
     fmt = request.args.get("format", "xlsx").lower().strip()
-    emp_chk = db.execute("SELECT id, department_id FROM employees WHERE id=?", (eid,)).fetchone()
-    if not emp_chk or not _employee_in_scope(db, session["uid"], emp_chk):
-        abort(403)
     data = _report_data(db, eid=eid, year=year)
 
     safe = None
@@ -2207,29 +1365,6 @@ def report_employee(eid):
         src = tmp.name
 
     return send_file(src, as_attachment=True, download_name=name, mimetype=mimetype, max_age=0)
-
-
-# --------------------------------------------------------------------------- #
-# Журнал аудита
-# --------------------------------------------------------------------------- #
-@app.route("/audit")
-@login_required
-@_require("view_audit")
-def audit_page():
-    """Журнал аудита: список действий с фильтром по пользователю."""
-    db = get_db()
-    user_id = request.args.get("user_id", type=int)
-    sql = """SELECT a.*, u.username
-             FROM audit_log a LEFT JOIN users u ON u.id=a.user_id"""
-    params = []
-    if user_id:
-        sql += " WHERE a.user_id=?"
-        params.append(user_id)
-    sql += " ORDER BY a.id DESC LIMIT 500"
-    rows = db.execute(sql, params).fetchall()
-    users = db.execute("SELECT id, username, role FROM users ORDER BY username").fetchall()
-    return render_template("audit.html", rows=rows, users=users,
-                           sel_user_id=user_id)
 
 
 # --------------------------------------------------------------------------- #
