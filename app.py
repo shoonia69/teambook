@@ -448,7 +448,11 @@ def _inject_notifications():
         return {"notifications": None}
     try:
         db = get_db()
-        return {"notifications": _notifications(db)}
+        try:
+            n = db.execute("SELECT COUNT(*) AS c FROM problems").fetchone()["c"]
+        except Exception:
+            n = 0
+        return {"notifications": _notifications(db), "problems_count": n}
     except Exception:
         return {"notifications": None}
 

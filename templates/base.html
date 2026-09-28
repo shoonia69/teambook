@@ -14,7 +14,7 @@
   <nav class="nav">
       <a href="{{ url_for('index') }}">Сотрудники</a>
       <a href="{{ url_for('board') }}">Доска</a>
-            <a href="{{ url_for('problems_page') }}">Проблемы</a>
+            <a href="{{ url_for('problems_page') }}">Проблемы{% if problems_count %}<span class="nav-badge">{{ problems_count }}</span>{% endif %}</a>
       <a href="{{ url_for('catalogs') }}">Справочники</a>
       <a href="{{ url_for('backup_page') }}">Резервная копия</a>
       <a href="{{ url_for('employee_new') }}">+ Добавить сотрудника</a>

@@ -552,6 +552,26 @@ c.post(f"/board/column/{work['id']}/delete", follow_redirects=True)
 check("пустой столбец удалён",
       len(dbq("SELECT * FROM kb_columns WHERE id=?", (work["id"],))) == 0)
 
+# --- счётчик проблем в меню ---
+emp_p = dbq("SELECT id FROM employees WHERE active=1 LIMIT 1")[0]["id"]
+r = c.get("/")
+html = r.get_data(as_text=True)
+c.post("/problem/add", data={"employee_id": str(emp_p), "text": "Тестовая проблема сч"}, follow_redirects=True)
+r = c.get("/")
+html = r.get_data(as_text=True)
+import re as _re
+m = _re.search(r'Проблемы<span class="nav-badge">(\d+)</span>', html)
+check("счётчик проблем в меню показывает количество",
+      m is not None and int(m.group(1)) >= 1)
+pid = dbq("SELECT id FROM problems WHERE text='Тестовая проблема сч'")[0]["id"]
+c.post(f"/problem/{pid}/delete", follow_redirects=True)
+r = c.get("/")
+html = r.get_data(as_text=True)
+m2 = _re.search(r'Проблемы<span class="nav-badge">(\d+)</span>', html)
+prev = int(m.group(1)) if m else 0
+now = int(m2.group(1)) if m2 else 0
+check("счётчик уменьшается после удаления проблемы", now == prev - 1)
+
 print()
 if failures:
     print(f"ИТОГ: {len(failures)} ПРОВАЛЕНО -> {failures}")
