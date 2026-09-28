@@ -3,6 +3,7 @@
 import os
 import tempfile
 import sys
+import datetime
 import re as _re
 
 tmp = tempfile.mkdtemp()
@@ -607,6 +608,54 @@ r = c.get("/settings")
 h = r.get_data(as_text=True)
 check("в форме подставлены сохранённые значения",
       "123:TESTTOKEN" in h and "418650868" in h)
+
+# --- личный todo: бэклог → на сегодня ---
+c.post("/todo/add", data={"title": "Туду-задача А"}, follow_redirects=True)
+c.post("/todo/add", data={"title": "Туду-задача Б"}, follow_redirects=True)
+todos = {r["title"]: r["id"] for r in dbq("SELECT * FROM todo_items")}
+check("todo: задачи добавлены в бэклог",
+      "Туду-задача А" in todos and "Туду-задача Б" in todos)
+r = c.get("/todo")
+h = r.get_data(as_text=True)
+check("todo: страница показывает бэклог",
+      "Мои задачи" in h and "Туду-задача А" in h and "Бэклог" in h)
+# перенести А на сегодня
+c.post(f"/todo/{todos['Туду-задача А']}/today", follow_redirects=True)
+row = dbq("SELECT status, assigned_date FROM todo_items WHERE id=?",
+          (todos["Туду-задача А"],))[0]
+check("todo: задача переведена «на сегодня»",
+      row["status"] == "today" and row["assigned_date"] == datetime.date.today().isoformat())
+# делегировать А в канбан (Бэклог)
+c.post(f"/todo/{todos['Туду-задача А']}/delegate", follow_redirects=True)
+left = dbq("SELECT 1 FROM todo_items WHERE id=?", (todos["Туду-задача А"],))
+kb = dbq("SELECT * FROM kb_tasks WHERE title='Туду-задача А'")
+backlog = dbq("SELECT id FROM kb_columns WHERE locked=1 AND kind='kanban'")[0]["id"]
+check("todo: делегирование убирает из todo и создаёт в канбане-Бэклоге",
+      len(left) == 0 and len(kb) == 1 and kb[0]["column_id"] == backlog)
+# пометить Б сделанным (удалить)
+c.post(f"/todo/{todos['Туду-задача Б']}/done", follow_redirects=True)
+check("todo: «сделано» удаляет задачу",
+      len(dbq("SELECT 1 FROM todo_items WHERE id=?", (todos["Туду-задача Б"],))) == 0)
+# переставить порядок: добавить две и поменять местами
+c.post("/todo/add", data={"title": "Порядок-1"}, follow_redirects=True)
+c.post("/todo/add", data={"title": "Порядок-2"}, follow_redirects=True)
+p1 = dbq("SELECT id FROM todo_items WHERE title='Порядок-1'")[0]["id"]
+p2 = dbq("SELECT id FROM todo_items WHERE title='Порядок-2'")[0]["id"]
+c.post(f"/todo/{p1}/up", follow_redirects=True)  # у первого нет верхнего — ничего
+c.post(f"/todo/{p2}/up", follow_redirects=True)  # p2 станет выше p1
+so = {r["title"]: r["sort_order"] for r in dbq("SELECT * FROM todo_items")}
+check("todo: перестановка порядка (↑/↓)", so["Порядок-2"] < so["Порядок-1"])
+# авто-сброс: невыполненное, назначенное на вчера, возвращается в бэклог
+c.post("/todo/add", data={"title": "Сброс-вчера"}, follow_redirects=True)
+sid = dbq("SELECT id FROM todo_items WHERE title='Сброс-вчера'")[0]["id"]
+import sqlite3
+_conn = sqlite3.connect(os.path.join(tmp, "hr_notes.db"))
+_conn.execute("UPDATE todo_items SET status='today', assigned_date='2000-01-01' WHERE id=?", (sid,))
+_conn.commit(); _conn.close()
+r = c.get("/todo")
+row2 = dbq("SELECT status, assigned_date FROM todo_items WHERE id=?", (sid,))[0]
+check("todo: несделанное «на вчера» авто-возвращается в бэклог",
+      row2["status"] == "backlog" and row2["assigned_date"] == "")
 
 print()
 if failures:

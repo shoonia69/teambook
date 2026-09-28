@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Мои задачи · TeamBook{% endblock %}
+{% block content %}
+
+<div class="toolbar">
+  <h2 style="margin:0">📋 Мои задачи</h2>
+  <span class="sub" style="font-size:13px">
+    Бэклог → «на сегодня». Несделанное на завтра вернётся в бэклог автоматически.
+  </span>
+  <div class="spacer"></div>
+  <a class="btn" href="{{ url_for('index') }}">← К сотрудникам</a>
+</div>
+
+<div class="todo-wrap">
+  <!-- СЕГОДНЯ -->
+  <section class="todo-panel">
+    <div class="panel-title">☀️ На сегодня · {{ today|length }}</div>
+    {% if today %}
+    <div class="todo-list">
+      {% for t in today %}
+      <div class="todo-item">
+        <span class="todo-title">{{ t.title }}</span>
+        <div class="todo-actions">
+          <form method="post" action="{{ url_for('todo_done', todo=t.id) }}" style="display:inline;margin:0">
+            <button class="btn btn-xs primary" type="submit" title="Сделано">✓</button>
+          </form>
+          <form method="post" action="{{ url_for('todo_backlog', todo=t.id) }}" style="display:inline;margin:0">
+            <button class="btn btn-xs" type="submit" title="Вернуть в бэклог">↩</button>
+          </form>
+          <form method="post" action="{{ url_for('todo_delegate', todo=t.id) }}" style="display:inline;margin:0">
+            <button class="btn btn-xs" type="submit" title="Делегировать в канбан">→ канбан</button>
+          </form>
+        </div>
+      </div>
+      {% else %}
+      <div class="kb-empty">пусто</div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty">Сегодня свободно. Возьмите задачи из бэклога.</div>
+    {% endif %}
+  </section>
+
+  <!-- БЭКЛОГ -->
+  <section class="todo-panel">
+    <div class="panel-title">📥 Бэклог · {{ backlog|length }}</div>
+    <form method="post" action="{{ url_for('todo_add') }}" class="todo-add-row">
+      <input type="text" name="title" placeholder="Новая задача (попадёт в бэклог)..." autocomplete="off" required style="flex:1">
+      <button class="btn small primary" type="submit">+</button>
+    </form>
+    {% if backlog %}
+    <div class="todo-list">
+      {% for t in backlog %}
+      <div class="todo-item">
+        <span class="todo-title">{{ t.title }}</span>
+        <div class="todo-actions">
+          <form method="post" action="{{ url_for('todo_up', todo=t.id) }}" style="display:inline;margin:0">
+            <button class="btn btn-xs" type="submit" title="Выше">↑</button>
+          </form>
+          <form method="post" action="{{ url_for('todo_down', todo=t.id) }}" style="display:inline;margin:0">
+            <button class="btn btn-xs" type="submit" title="Ниже">↓</button>
+          </form>
+          <form method="post" action="{{ url_for('todo_today', todo=t.id) }}" style="display:inline;margin:0">
+            <button class="btn btn-xs primary" type="submit" title="На сегодня">☀️ сегодня</button>
+          </form>
+          <form method="post" action="{{ url_for('todo_delegate', todo=t.id) }}" style="display:inline;margin:0">
+            <button class="btn btn-xs" type="submit" title="Делегировать в канбан">→ канбан</button>
+          </form>
+          <form method="post" action="{{ url_for('todo_delete', todo=t.id) }}" style="display:inline;margin:0">
+            <button class="btn btn-xs danger" type="submit" title="Удалить">✕</button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty">Бэклог пуст. Добавьте задачи выше.</div>
+    {% endif %}
+  </section>
+</div>
+
+{% endblock %}

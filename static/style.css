@@ -473,3 +473,20 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
   .kb-chk { font-size: 12px; }
   .container { padding: 0 10px; }
 }
+
+/* ---------- личный todo (бэклог → на сегодня) ---------- */
+.todo-wrap { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.todo-panel {
+  flex: 1 1 420px; min-width: 300px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px; 
+}
+.todo-add-row { display: flex; gap: 8px; margin: 10px 0; }
+.todo-list { display: flex; flex-direction: column; gap: 8px; }
+.todo-item {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--panel2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px;
+}
+.todo-title { flex: 1; font-size: 14px; }
+.todo-actions { display: flex; gap: 4px; flex-shrink: 0; flex-wrap: wrap; }

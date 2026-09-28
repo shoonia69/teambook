@@ -188,6 +188,18 @@ CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT
 );
+
+-- Личный todo руководителя: бэклог задач и выбор «на сегодня».
+-- status: 'backlog' (в отложенном бэклоге) | 'today' (назначено на сегодня)
+-- assigned_date: дата, на которую задача назначена «на сегодня» (для авто-сброса)
+CREATE TABLE IF NOT EXISTS todo_items (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    title         TEXT NOT NULL,
+    status        TEXT NOT NULL DEFAULT 'backlog',
+    sort_order    INTEGER NOT NULL DEFAULT 0,
+    assigned_date TEXT DEFAULT '',
+    created_at    TEXT DEFAULT (datetime('now'))
+);
 """
 
 
@@ -2017,6 +2029,153 @@ def board_task_purge(tid):
     db.commit()
     flash("Задача удалена безвозвратно", "ok")
     return redirect(request.referrer or url_for("board"))
+
+
+# --------------------------------------------------------------------------- #
+# Личный todo руководителя (бэклог → на сегодня)
+# --------------------------------------------------------------------------- #
+@app.route("/todo")
+@login_required
+def todo_page():
+    db = get_db()
+    today_s = date.today().isoformat()
+    # авто-сброс: невыполненные «на вчера» возвращаются в бэклог
+    db.execute(
+        "UPDATE todo_items SET status='backlog', assigned_date='' "
+        "WHERE status='today' AND assigned_date != '' AND assigned_date != ?",
+        (today_s,))
+    db.commit()
+    backlog = db.execute(
+        "SELECT * FROM todo_items WHERE status='backlog' ORDER BY sort_order, id"
+    ).fetchall()
+    today = db.execute(
+        "SELECT * FROM todo_items WHERE status='today' ORDER BY sort_order, id"
+    ).fetchall()
+    return render_template("todo.html", backlog=backlog, today=today)
+
+
+@app.route("/todo/add", methods=["POST"])
+@login_required
+def todo_add():
+    title = request.form.get("title", "").strip()
+    if title:
+        db = get_db()
+        # новые попадают в конец бэклога
+        nxt = db.execute(
+            "SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM todo_items "
+            "WHERE status='backlog'").fetchone()["n"]
+        db.execute("INSERT INTO todo_items (title, status, sort_order) VALUES (?, 'backlog', ?)",
+                   (title, nxt))
+        db.commit()
+        flash("Добавлено в бэклог", "ok")
+    return redirect(url_for("todo_page"))
+
+
+@app.route("/todo/<int:todo>/today", methods=["POST"])
+@login_required
+def todo_today(todo):
+    db = get_db()
+    # решает сам руководитель, mark как "на сегодня"
+    nxt = db.execute(
+        "SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM todo_items "
+        "WHERE status='today'").fetchone()["n"]
+    db.execute(
+        "UPDATE todo_items SET status='today', assigned_date=?, sort_order=? WHERE id=?",
+        (date.today().isoformat(), nxt, todo))
+    db.commit()
+    flash("Задача на сегодня", "ok")
+    return redirect(url_for("todo_page"))
+
+
+@app.route("/todo/<int:todo>/backlog", methods=["POST"])
+@login_required
+def todo_backlog(todo):
+    db = get_db()
+    nxt = db.execute(
+        "SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM todo_items "
+        "WHERE status='backlog'").fetchone()["n"]
+    db.execute(
+        "UPDATE todo_items SET status='backlog', assigned_date='', sort_order=? WHERE id=?",
+        (nxt, todo))
+    db.commit()
+    flash("Возвращено в бэклог", "ok")
+    return redirect(url_for("todo_page"))
+
+
+@app.route("/todo/<int:todo>/done", methods=["POST"])
+@login_required
+def todo_done(todo):
+    db = get_db()
+    db.execute("DELETE FROM todo_items WHERE id=?", (todo,))
+    db.commit()
+    flash("Сделано ✓", "ok")
+    return redirect(url_for("todo_page"))
+
+
+@app.route("/todo/<int:todo>/delete", methods=["POST"])
+@login_required
+def todo_delete(todo):
+    db = get_db()
+    db.execute("DELETE FROM todo_items WHERE id=?", (todo,))
+    db.commit()
+    flash("Удалено", "ok")
+    return redirect(url_for("todo_page"))
+
+
+@app.route("/todo/<int:todo>/delegate", methods=["POST"])
+@login_required
+def todo_delegate(todo):
+    """Делегировать: личная задача → 📥 Бэклог канбана (для распределения)."""
+    db = get_db()
+    t = db.execute("SELECT * FROM todo_items WHERE id=?", (todo,)).fetchone()
+    if t:
+        backlog = db.execute(
+            "SELECT id FROM kb_columns WHERE locked=1 AND kind='kanban' LIMIT 1"
+        ).fetchone()
+        db.execute(
+            "INSERT INTO kb_tasks (title, column_id, description) VALUES (?,?,?)",
+            (t["title"], backlog["id"] if backlog else None,
+             "Делегировано из личного todo"))
+        db.execute("DELETE FROM todo_items WHERE id=?", (todo,))
+        db.commit()
+        flash("Отправлено в 📥 Бэклог канбана", "ok")
+    return redirect(url_for("todo_page"))
+
+
+def _todo_move(db, todo, up=True):
+    t = db.execute("SELECT * FROM todo_items WHERE id=?", (todo,)).fetchone()
+    if not t:
+        return
+    op = "<" if up else ">"
+    order = "DESC" if up else "ASC"
+    other = db.execute(
+        "SELECT * FROM todo_items WHERE status=? AND sort_order %s ? "
+        "ORDER BY sort_order %s LIMIT 1" % (op, order),
+        (t["status"], t["sort_order"])).fetchone()
+    if other:
+        db.execute("UPDATE todo_items SET sort_order=? WHERE id=?",
+                   (other["sort_order"], t["id"]))
+        db.execute("UPDATE todo_items SET sort_order=? WHERE id=?",
+                   (t["sort_order"], other["id"]))
+        db.commit()
+
+
+@app.route("/todo/<int:todo>/up", methods=["POST"])
+@login_required
+def todo_up(todo):
+    db = get_db()
+    _todo_move(db, todo, up=True)
+    db.commit()
+    return redirect(url_for("todo_page"))
+
+
+@app.route("/todo/<int:todo>/down", methods=["POST"])
+@login_required
+def todo_down(todo):
+    db = get_db()
+    _todo_move(db, todo, up=False)
+    db.commit()
+    return redirect(url_for("todo_page"))
 
 
 # --------------------------------------------------------------------------- #
