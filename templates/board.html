@@ -38,8 +38,10 @@
         <div class="kb-col" data-colid="{{ col.id }}"
              ondragover="event.preventDefault(); this.classList.add('drag-over')"
              ondragleave="this.classList.remove('drag-over')"
-             ondrop="dropTask(event, {{ col.id }})">
+             ondrop="dropOn(event, {{ col.id }})">
           <div class="kb-col-head">
+            <span class="kb-grip" draggable="true" ondragstart="dragCol(event)"
+                  title="Перетащите на другой столбец, чтобы изменить порядок" aria-label="Перетащить столбец">⠿</span>
             <span class="kb-col-name">{{ col.name }}</span>
             <span class="kb-count">{{ tasks|length }}</span>
             {% if not col.locked %}
@@ -198,6 +200,30 @@
 <script>
 /* Drag & drop карточек между столбцами канбана */
 let draggedId = null;
+let draggedColId = null;
+function dragCol(ev) {
+  if (ev.target !== ev.currentTarget) return;   /* drag только за саму ручку */
+  draggedColId = ev.currentTarget.dataset.cid ? ev.currentTarget.dataset.cid
+                : ev.currentTarget.closest('.kb-col').dataset.colid;
+  ev.dataTransfer.effectAllowed = 'move';
+  ev.dataTransfer.setData('text/plain', draggedColId);
+}
+function dropOn(ev, colId) {
+  if (draggedColId) {           /* перетаскивание столбца */
+    ev.preventDefault();
+    ev.currentTarget.classList.remove('drag-over');
+    moveCol(draggedColId, colId);
+    draggedColId = null;
+    return;
+  }
+  dropTask(ev, colId);          /* перетаскивание карточки — прежняя логика */
+}
+function moveCol(cid, beforeCid) {
+  var fd = new FormData();
+  fd.append('before', beforeCid === null ? '' : beforeCid);
+  fetch('/board/column/' + encodeURIComponent(cid) + '/move', { method: 'POST', body: fd })
+    .then(function () { location.reload(); });
+}
 function dragTask(ev) {
   draggedId = ev.currentTarget.dataset.id;
   ev.dataTransfer.effectAllowed = 'move';

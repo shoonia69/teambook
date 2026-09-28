@@ -561,6 +561,26 @@ r = c.post(f"/board/column/{done['id']}/delete", follow_redirects=True)
 check("пустой столбец удалён",
       len(dbq("SELECT * FROM kb_columns WHERE id=?", (done["id"],))) == 0)
 
+# --- перестановка столбцов: перетаскиванием /board/column/<id>/move ---
+def _cols_ordered(dbq):
+    return [r["name"] for r in dbq("SELECT name FROM kb_columns WHERE kind='kanban' ORDER BY sort_order, id")]
+c.post("/board/column/add", data={"name": "Бокс Справа"}, follow_redirects=True)
+c.post("/board/column/add", data={"name": "Бокс Правее"}, follow_redirects=True)
+ord_before = _cols_ordered(dbq)
+# проверим перенос самого правого столбца в самую левую позицию («перед» первым)
+last2 = dbq("SELECT id, name FROM kb_columns WHERE kind='kanban' ORDER BY sort_order DESC, id DESC LIMIT 1")[0]
+first2 = dbq("SELECT id FROM kb_columns WHERE kind='kanban' ORDER BY sort_order, id LIMIT 1")[0]
+r = c.post(f"/board/column/{last2['id']}/move", data={"before": str(first2["id"])})
+ord_after = _cols_ordered(dbq)
+check("столбец переносится в начало перетаскиванием",
+      r.status_code == 204 and ord_after[0] == last2["name"] and ord_after != ord_before)
+# без `before` — переносится в конец
+firstb = dbq("SELECT id, name FROM kb_columns WHERE kind='kanban' ORDER BY sort_order, id LIMIT 1")[0]
+r = c.post(f"/board/column/{firstb['id']}/move", data={"before": ""})
+ord_last = _cols_ordered(dbq)
+check("столбец переносится в конец без `before`",
+      r.status_code == 204 and ord_last[-1] == firstb["name"])
+
 # --- счётчик проблем в меню ---
 emp_p = dbq("SELECT id FROM employees WHERE active=1 LIMIT 1")[0]["id"]
 r = c.get("/")

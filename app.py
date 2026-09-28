@@ -1846,6 +1846,32 @@ def board_column_delete(cid):
     return redirect(url_for("board"))
 
 
+@app.route("/board/column/<int:cid>/move", methods=["POST"])
+@login_required
+def board_column_move(cid):
+    """Переставить столбец: перед столбцом `before` (или в конец, если не задан)."""
+    db = get_db()
+    col = db.execute(
+        "SELECT id FROM kb_columns WHERE id=? AND kind='kanban'", (cid,)
+    ).fetchone()
+    if not col:
+        return "", 204
+    before_id = _clean_int(request.form.get("before"))
+    ids = [r["id"] for r in db.execute(
+        "SELECT id FROM kb_columns WHERE kind='kanban' ORDER BY sort_order, id"
+    ).fetchall()]
+    if cid in ids:
+        ids.remove(cid)
+    if before_id and before_id in ids:
+        ids.insert(ids.index(before_id), cid)
+    else:
+        ids.append(cid)
+    for i, c in enumerate(ids):
+        db.execute("UPDATE kb_columns SET sort_order=? WHERE id=?", (i * 10, c))
+    db.commit()
+    return "", 204
+
+
 def _parse_members(form_getlist):
     """Список id исполнителей из формы (multi select / чекбоксов)."""
     out = []

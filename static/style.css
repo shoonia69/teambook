@@ -351,6 +351,8 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
 .kb-add-col input, .kb-add-task input { flex: 1; min-width: 120px; }
 .kb-add-task { display: flex; gap: 6px; margin-top: auto; }
 .kb-add-task input { padding: 6px 8px; }
+.kb-grip { cursor: grab; display: inline-block; margin-right: 6px; color: var(--muted); user-select: none; }
+.kb-grip:active { cursor: grabbing; }
 
 .kb-card-edit { position: relative; }
 .kb-card-edit summary { cursor: pointer; list-style: none; color: var(--muted); padding: 0 4px; }
