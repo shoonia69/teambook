@@ -1,4 +1,4 @@
-/* TeamBook — тёмная, аккуратная тема */
+/* TeamBook — тёмная тема (по умолчанию); [data-theme=light] — светлая */
 :root {
   --bg: #0f1420;
   --panel: #171e30;
@@ -9,7 +9,20 @@
   --accent: #4f8cff;
   --accent2: #38d9a9;
   --danger: #ff6b6b;
+  --accent-fg: #04121f;
   --radius: 10px;
+}
+[data-theme="light"] {
+  --bg: #f3f5fa;
+  --panel: #ffffff;
+  --panel2: #eef1f8;
+  --border: #d6dcec;
+  --text: #1c2340;
+  --muted: #5b6685;
+  --accent: #2f6bdc;
+  --accent2: #0f9d75;
+  --danger: #d64545;
+  --accent-fg: #ffffff;
 }
 
 * { box-sizing: border-box; }
@@ -35,7 +48,7 @@ a:hover { text-decoration: underline; }
 .brand a { display: flex; align-items: center; gap: 8px; color: var(--text); text-decoration: none; }
 .logo {
   background: linear-gradient(135deg, var(--accent), var(--accent2));
-  color: #04121f; font-weight: 700; border-radius: 7px;
+  color: var(--accent-fg); font-weight: 700; border-radius: 7px;
   padding: 3px 9px; font-size: 15px;
 }
 .brand-name { font-weight: 600; font-size: 17px; }
@@ -129,7 +142,7 @@ a.stat-card.warn .stat-num { color: var(--danger); }
   padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border);
   color: var(--muted); cursor: pointer; background: var(--panel2);
 }
-.year-tab.active { background: var(--accent); border-color: var(--accent); color: #04121f; font-weight: 600; }
+.year-tab.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 600; }
 .year-tab:hover { text-decoration: none; color: var(--text); }
 
 /* ---------- filters ---------- */
@@ -142,7 +155,7 @@ a.stat-card.warn .stat-num { color: var(--danger); }
   background: var(--panel2); color: var(--muted); font-size: 13px; cursor: pointer;
 }
 .chip:hover { text-decoration: none; color: var(--text); border-color: var(--accent); }
-.chip.active { background: var(--accent); border-color: var(--accent); color: #04121f; font-weight: 600; }
+.chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 600; }
 
 /* ---------- table ---------- */
 .table-wrap { overflow-x: auto; }
@@ -207,7 +220,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
   text-decoration: none; line-height: 1.4;
 }
 .btn:hover { text-decoration: none; border-color: var(--accent); }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #04121f; font-weight: 600; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 600; }
 .btn.primary:hover { filter: brightness(1.1); }
 .btn.danger { color: var(--danger); border-color: rgba(255,107,107,.4); }
 .btn.danger:hover { background: rgba(255,107,107,.1); }
@@ -491,6 +504,11 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
   border-radius: 8px; padding: 8px 10px;
 }
 .todo-title { flex: 1; font-size: 14px; }
+.todo-due { font-size: 12px; color: var(--muted); background: rgba(79,140,255,.12); padding: 1px 6px; border-radius: 6px; white-space: nowrap; }
+.todo-due.over { color: var(--danger); background: rgba(255,107,107,.12); font-weight: 600; }
+.todo-tag { font-size: 11px; color: var(--accent2); background: rgba(56,217,169,.12); padding: 1px 6px; border-radius: 6px; white-space: nowrap; }
+.todo-over { border-color: var(--danger) !important; }
+.todo-tpl { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 10px; align-items: center; }
 .todo-actions { display: flex; gap: 4px; flex-shrink: 0; flex-wrap: wrap; }
 
 /* --- матрица Эйзенхауэра в личном todo (2×2, важно × срочно) --- */

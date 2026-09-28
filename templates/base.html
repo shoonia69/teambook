@@ -14,14 +14,15 @@
   <nav class="nav">
       <a href="{{ url_for('index') }}">Сотрудники</a>
       <a href="{{ url_for('board') }}">Доска{% if board_overdue %}<span class="nav-badge">{{ '99+' if board_overdue > 99 else board_overdue }}</span>{% endif %}</a>
-      <a href="{{ url_for('todo_page') }}">Мои задачи</a>
+      <a href="{{ url_for('todo_page') }}">Мои задачи{% if todo_cnt %}<span class="nav-badge">{{ '99+' if todo_cnt > 99 else todo_cnt }}</span>{% endif %}</a>
       <a href="{{ url_for('problems_page') }}">Проблемы{% if problems_count %}<span class="nav-badge">{{ problems_count }}</span>{% endif %}</a>
       <a href="{{ url_for('catalogs') }}">Справочники</a>
       <a href="{{ url_for('settings_page') }}">Настройки</a>
     </nav>
   <div class="user-area">
-      {% if session.get('authed') %}
-        {% if notifications %}
+        {% if session.get('authed') %}
+          <button class="btn btn-xs" id="themeToggle" title="Светлая/тёмная тема" type="button" onclick="toggleTheme()">◐</button>
+          {% if notifications %}
         <div class="notif">
           <button class="notif-btn" id="notifBtn" aria-label="Уведомления">
             <svg class="notif-bell" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
@@ -31,7 +32,7 @@
             {% if notifications.overdue %}
             <div class="notif-group"><div class="notif-title">Просрочено · срок вышел</div>
               {% for n in notifications.overdue %}
-              <a class="notif-item over" href="{{ url_for('board') }}">
+              <a class="notif-item over" href="{{ url_for('board') if n.kind != 'todo' else url_for('todo_page') }}">
                 <div class="notif-item-row"><span class="notif-txt">{{ n.title }}</span><span class="notif-date">{{ n.due_date }}</span></div>
                 <div class="notif-meta">{{ n.col_name }}{% if n.emp %} · {{ n.emp }}{% endif %}</div>
               </a>
@@ -41,7 +42,7 @@
             {% if notifications.soon %}
             <div class="notif-group"><div class="notif-title">Срок ближайшие 3 дня</div>
               {% for n in notifications.soon %}
-              <a class="notif-item" href="{{ url_for('board') }}">
+              <a class="notif-item" href="{{ url_for('board') if n.kind != 'todo' else url_for('todo_page') }}">
                 <div class="notif-item-row"><span class="notif-txt">{{ n.title }}</span><span class="notif-date">{{ n.due_date }}</span></div>
                 <div class="notif-meta">{{ n.col_name }}{% if n.emp %} · {{ n.emp }}{% endif %}</div>
               </a>
@@ -77,6 +78,20 @@
 </footer>
 
 <script>
+/* Тема: светлая/тёмная, выбор сохраняется в localStorage */
+(function () {
+  try {
+    var saved = localStorage.getItem('tb_theme');
+    if (saved === 'light') document.documentElement.setAttribute('data-theme', 'light');
+  } catch (e) {}
+  window.toggleTheme = function () {
+    var cur = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : '';
+    var next = cur === 'light' ? '' : 'light';
+    if (next) document.documentElement.setAttribute('data-theme', 'light');
+    else document.documentElement.removeAttribute('data-theme');
+    try { localStorage.setItem('tb_theme', next); } catch (e) {}
+  };
+})();
 /* Адаптивное расширение textarea по высоте содержимого (без полос прокрутки) */
 (function () {
   function fit(el) {

@@ -1,0 +1,20 @@
+<form method="post" action="{{ url_for('todo_edit', todo=t.id) }}">
+  <label>Название *</label>
+  <input type="text" name="title" value="{{ t.title }}" required autofocus>
+  <div class="tm-dates" style="grid-template-columns:1fr 1fr">
+    <div>
+      <label>Срок</label>
+      <input type="date" name="due_date" value="{{ t.due_date }}">
+    </div>
+    <div>
+      <label>Тег</label>
+      <input type="text" name="tag" value="{{ t.tag }}" list="todo-tags" placeholder="например, 1-1">
+    </div>
+  </div>
+  <datalist id="todo-tags">
+    {% for tg in tags %}<option value="{{ tg }}">{% endfor %}
+  </datalist>
+  <div class="btn-row">
+    <button class="btn primary" type="submit">Сохранить</button>
+  </div>
+</form>

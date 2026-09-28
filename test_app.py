@@ -687,7 +687,8 @@ c.post("/todo/add", data={"title": "Для редактирования"}, follo
 r = c.get("/todo")
 h = r.get_data(as_text=True)
 check("todo: на карточках есть кнопка редактирования и drag&drop",
-      "todoEdit(" in h and "Редактировать" in h and "dirTodoDrag" in h and "todoDrop" in h)
+      "openTodo(" in h and "Редактировать" in h and "dirTodoDrag" in h
+      and "todoDrop" in h and "/todo/' + encodeURIComponent(id) + '/card'" in h)
 # переставить порядок в бэклоге: очистить todo, добавить две и поменять местами
 _conn = sqlite3.connect(os.path.join(tmp, "hr_notes.db"))
 _conn.execute("DELETE FROM todo_items"); _conn.commit(); _conn.close()
@@ -708,6 +709,31 @@ rows = dbq("SELECT status FROM todo_items WHERE title='Порядок-1'")
 # статус 'today' после открытия страницы не должен появиться как q-квадрант; допуск: останется
 check("todo: страница открывается с раскладкой матрицы",
       r.status_code == 200 and "eisen-quad" in r.get_data(as_text=True))
+
+# --- улучшения пакета: срок, тег, поиск, шаблоны, архив по дате, счётчик, тема ---
+conn = sqlite3.connect(os.path.join(tmp, "hr_notes.db"))
+conn.execute("INSERT INTO todo_items (title, status, due_date, tag) VALUES (?,?,?,?)",
+             ("С сероком и тегом", "backlog", "2030-01-01", "важное"))
+todo_id = conn.execute(
+    "SELECT id FROM todo_items WHERE title='С сероком и тегом'").fetchone()[0]
+conn.commit(); conn.close()
+r = c.get(f"/todo/{todo_id}/card"); h = r.get_data(as_text=True)
+check("todo: модалка редактирования (срок/тег)",
+      r.status_code == 200 and 'name="due_date"' in h and 'name="tag"' in h)
+# срок+тег сохраняются через edit
+r = c.post(f"/todo/{todo_id}/edit",
+           data={"title": "С сероком и тегом", "due_date": "2030-06-15", "tag": "люди"})
+r = c.get("/todo"); h = r.get_data(as_text=True)
+check("todo: срок и тег видны на карточке и в фильтре",
+      "06-15" in h and "todo-tag" in h
+      and 'id="todoSearch"' in h and 'id="todoTagFilter"' in h)
+check("todo: шаблоны быстрых задач на странице",
+      'onclick="applyTpl(' in h and "Быстрое добавление" in h)
+r = c.get("/todo/archive?date=2030-06-15")
+check("todo: архив принимает выбранную дату", r.status_code == 200)
+# счётчик в навигации = число невыполненных задач (на странице todo через base)
+check("main: светлая/тёмная тема — кнопка и скрипт в base",
+      'id="themeToggle"' in h and "toggleTheme" in h)
 
 print()
 if failures:

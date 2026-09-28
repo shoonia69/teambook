@@ -195,6 +195,8 @@ CREATE TABLE IF NOT EXISTS settings (
 --   q_iu = важно + срочно, q_in = важно + не срочно,
 --   q_nu = не важно + срочно, q_nn = не важно + не срочно
 -- assigned_date: резерв (не используется с 2026, квадранты вместо «на сегодня»)
+-- due_date: опциональный срок (для подсветки просрочки и уведомлений в шапке)
+-- tag: необязательный тег/группа («серверная», «люди», «1-1» и т.п.)
 CREATE TABLE IF NOT EXISTS todo_items (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     title         TEXT NOT NULL,
@@ -202,6 +204,8 @@ CREATE TABLE IF NOT EXISTS todo_items (
     sort_order    INTEGER NOT NULL DEFAULT 0,
     assigned_date TEXT DEFAULT '',
     done_date     TEXT DEFAULT '',
+    due_date      TEXT DEFAULT '',
+    tag           TEXT DEFAULT '',
     created_at    TEXT DEFAULT (datetime('now'))
 );
 """
@@ -248,6 +252,11 @@ def init_db():
         db.execute("ALTER TABLE todo_items ADD COLUMN done_date TEXT DEFAULT ''")
     # миграция: прежний статус 'today' («на сегодня») -> квадрант «важно + срочно»
     db.execute("UPDATE todo_items SET status='q_iu' WHERE status='today'")
+    # миграция: срок и тег в личном todo
+    if "due_date" not in todo_cols:
+        db.execute("ALTER TABLE todo_items ADD COLUMN due_date TEXT DEFAULT ''")
+    if "tag" not in todo_cols:
+        db.execute("ALTER TABLE todo_items ADD COLUMN tag TEXT DEFAULT ''")
 
     # Миграция канбана: колонки архива/корзины + many-to-many исполнители.
     kb_cols = {r[1] for r in db.execute("PRAGMA table_info(kb_tasks)").fetchall()}
@@ -468,12 +477,31 @@ def _notifications(db):
         (horizon,),
     ).fetchall()
     members = _task_members_map(db)
+    # личный todo тоже со сроками: цели в колокольчик (c 2026)
+    todo_rows = db.execute(
+        """SELECT id, title, due_date, '' AS col_name, '' AS emp
+           FROM todo_items
+           WHERE status != 'done' AND due_date != '' AND due_date <= ?
+           ORDER BY due_date ASC""",
+        (horizon,),
+    ).fetchall()
     overdue, soon = [], []
     for r in rows:
         item = {
             "id": r["id"], "title": r["title"],
             "due_date": r["due_date"], "col_name": r["col_name"] or "—",
             "emp": ", ".join(m["name"] for m in members.get(r["id"], [])),
+            "kind": "kanban",
+        }
+        if r["due_date"] < today_s:
+            overdue.append(item)
+        else:
+            soon.append(item)
+    for r in todo_rows:
+        item = {
+            "id": r["id"], "title": r["title"],
+            "due_date": r["due_date"], "col_name": "📋 Мои задачи",
+            "emp": "", "kind": "todo",
         }
         if r["due_date"] < today_s:
             overdue.append(item)
@@ -498,8 +526,15 @@ def _inject_notifications():
             n = 0
         notif = _notifications(db)
         board_overdue = len(notif["overdue"])
+        # счётчик задач в личном todo (невыполненные: бэклог + квадранты)
+        try:
+            todo_cnt = db.execute(
+                "SELECT COUNT(*) AS c FROM todo_items WHERE status != 'done'"
+            ).fetchone()["c"]
+        except Exception:
+            todo_cnt = 0
         return {"notifications": notif, "problems_count": n,
-                "board_overdue": board_overdue}
+                "board_overdue": board_overdue, "todo_cnt": todo_cnt}
     except Exception:
         return {"notifications": None}
 
@@ -588,12 +623,19 @@ def index():
     records_count = db.execute(
         "SELECT COUNT(*) c FROM year_records WHERE year = ?",
         (this_year,)).fetchone()["c"]
+    todo_open = db.execute(
+        "SELECT COUNT(*) c FROM todo_items WHERE status != 'done'").fetchone()["c"]
+    todo_done_today = db.execute(
+        "SELECT COUNT(*) c FROM todo_items WHERE status='done' AND done_date=?",
+        (today_iso,)).fetchone()["c"]
     stats = {
         "open_tasks": open_tasks,
         "overdue_tasks": overdue_tasks,
         "problems": problems_count,
         "records": records_count,
         "year": this_year,
+        "todo_open": todo_open,
+        "todo_done_today": todo_done_today,
     }
 
     return render_template(
@@ -2097,9 +2139,7 @@ def board_task_purge(tid):
 def todo_page():
     db = get_db()
     today_s = date.today().isoformat()
-    # архив — только задачи, выполненные сегодня; старьё из него удаляем
-    db.execute("DELETE FROM todo_items WHERE status='done' AND done_date != ?", (today_s,))
-    db.commit()
+    # (архив хранит выполненные за любой день — история не чистится автоматически)
     backlog = db.execute(
         "SELECT * FROM todo_items WHERE status='backlog' ORDER BY sort_order, id"
     ).fetchall()
@@ -2112,10 +2152,25 @@ def todo_page():
         "SELECT * FROM todo_items WHERE status='done' AND done_date=? "
         "ORDER BY id DESC", (today_s,)
     ).fetchall()
+    tags = sorted({r["tag"] for r in db.execute(
+        "SELECT tag FROM todo_items WHERE tag != ''").fetchall()})
     return render_template(
         "todo.html", backlog=backlog, quadrants=QUADRANTS,
-        quad_tasks=quad_tasks, archive=archive)
+        quad_tasks=quad_tasks, archive=archive, today_s=today_s,
+        all_tags=tags, templates=TODO_TEMPLATES)
 
+
+# Шаблоны быстрых задач (одним кликом в бэклог)
+TODO_TEMPLATES = [
+    "провести 1-1 с …",
+    "подготовить отзыв о …",
+    "обновить описание роли …",
+    "посмотреть серверную",
+    "премирование: …",
+    "доступ в гит для …",
+    "ключи/доступы для …",
+    "созвон с командой",
+]
 
 # Квадранты Эйзенхауэра в личном todo (важно × срочно)
 QUADRANTS = [
@@ -2129,14 +2184,29 @@ QUADRANTS = [
 @app.route("/todo/archive")
 @login_required
 def todo_archive():
-    """Архив личного todo: задачи, выполненные сегодня."""
+    """Архив личного todo: выполненные за выбранный день (по умолчанию — сегодня)."""
     db = get_db()
     today_s = date.today().isoformat()
+    day = request.args.get("date", "").strip() or today_s
+    if day > today_s:
+        day = today_s
     items = db.execute(
         "SELECT * FROM todo_items WHERE status='done' AND done_date=? "
-        "ORDER BY id DESC", (today_s,)
+        "ORDER BY id DESC", (day,)
     ).fetchall()
-    return render_template("todo_archive.html", archive=items)
+    prev = next = None
+    try:
+        from datetime import timedelta
+        d = datetime.strptime(day, "%Y-%m-%d").date()
+        if d - timedelta(days=1) >= datetime(2026, 1, 1).date():
+            prev = (d - timedelta(days=1)).isoformat()
+        if d < date.today():
+            nxt = (d + timedelta(days=1)).isoformat()
+    except Exception:
+        pass
+    return render_template(
+            "todo_archive.html", archive=items, day=day,
+            prev=prev, next=next, todays=today_s)
 
 
 @app.route("/todo/add", methods=["POST"])
@@ -2159,14 +2229,32 @@ def todo_add():
 @app.route("/todo/<int:todo>/edit", methods=["POST"])
 @login_required
 def todo_edit(todo):
-    """Переименовать задачу в личном todo."""
-    title = request.form.get("title", "").strip()
-    if title:
-        db = get_db()
-        db.execute("UPDATE todo_items SET title=? WHERE id=?", (title, todo))
+    """Обновить задачу в личном todo: заголовок, срок, тег."""
+    db = get_db()
+    row = db.execute("SELECT * FROM todo_items WHERE id=?", (todo,)).fetchone()
+    if row:
+        title = request.form.get("title", "").strip() or row["title"]
+        due = request.form.get("due_date", "").strip()
+        tag = request.form.get("tag", "").strip()
+        db.execute(
+            "UPDATE todo_items SET title=?, due_date=?, tag=? WHERE id=?",
+            (title, due, tag, todo))
         db.commit()
         flash("Задача обновлена", "ok")
     return redirect(url_for("todo_page"))
+
+
+@app.route("/todo/<int:todo>/card")
+@login_required
+def todo_card(todo):
+    """Фрагмент модалки редактирования задачи личного todo."""
+    db = get_db()
+    t = db.execute("SELECT * FROM todo_items WHERE id=?", (todo,)).fetchone()
+    if not t:
+        return "", 404
+    tags = [r["tag"] for r in db.execute(
+        "SELECT DISTINCT tag FROM todo_items WHERE tag != '' ORDER BY tag") if r["tag"]]
+    return render_template("_todo_modal.html", t=t, tags=tags)
 
 
 @app.route("/todo/<int:todo>/move", methods=["POST"])

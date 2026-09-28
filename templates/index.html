@@ -32,10 +32,18 @@
       <span class="stat-label">проблем</span>
     </a>
     <span class="stat-card">
-      <span class="stat-num">{{ stats.records }}</span>
-      <span class="stat-label">записей за {{ stats.year }} г.</span>
-    </span>
-  </div>
+          <span class="stat-num">{{ stats.records }}</span>
+          <span class="stat-label">записей за {{ stats.year }} г.</span>
+        </span>
+        <a class="stat-card {% if stats.todo_open %}warn{% endif %}" href="{{ url_for('todo_page') }}">
+          <span class="stat-num">{{ stats.todo_open }}</span>
+          <span class="stat-label">в личном todo</span>
+        </a>
+        <a class="stat-card" href="{{ url_for('todo_archive') }}">
+          <span class="stat-num">{{ stats.todo_done_today }}</span>
+          <span class="stat-label">выполнено сегодня</span>
+        </a>
+      </div>
   {% endif %}
 
 <!-- Поиск по имени/фамилии -->

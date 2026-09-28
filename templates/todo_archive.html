@@ -4,16 +4,24 @@
 
 <div class="toolbar">
   <h2 style="margin:0">🗄 Архив задач</h2>
-  <span class="sub">Выполнено сегодня · {{ archive|length }}</span>
+  <span class="sub">Выполнено {{ day }} · {{ archive|length }}</span>
   <div class="spacer"></div>
   <a class="btn" href="{{ url_for('todo_page') }}">← Мои задачи</a>
 </div>
+
+<form class="filter-row" method="get" action="{{ url_for('todo_archive') }}" style="gap:8px;margin:12px 0">
+  {% if prev %}<a class="btn" href="{{ url_for('todo_archive', date=prev) }}" title="Предыдущий день">‹ {{ prev }}</a>{% endif %}
+  <input type="date" name="date" value="{{ day }}" onchange="this.form.submit()" style="max-width:180px">
+  {% if next %}<a class="btn" href="{{ url_for('todo_archive', date=next) }}" title="Следующий день">{{ next }} ›</a>{% endif %}
+  {% if day != todays %}<a class="btn btn-xs" href="{{ url_for('todo_archive') }}">сегодня</a>{% endif %}
+</form>
 
 {% if archive %}
 <div class="todo-list">
   {% for t in archive %}
   <div class="todo-item done">
     <span class="todo-title"><s>{{ t.title }}</s></span>
+    {% if t.tag %}<span class="todo-tag">{{ t.tag }}</span>{% endif %}
     <div class="todo-actions">
       <form method="post" action="{{ url_for('todo_move', todo=t.id) }}" style="display:inline;margin:0">
         <input type="hidden" name="status" value="backlog">
@@ -28,7 +36,7 @@
   {% endfor %}
 </div>
 {% else %}
-<div class="card"><div class="empty">Сделанное сегодня появится здесь. Выполните задачу на странице «Мои задачи».</div></div>
+<div class="card"><div class="empty">За этот день ничего не выполнялось.</div></div>
 {% endif %}
 
 {% endblock %}
