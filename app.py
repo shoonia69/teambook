@@ -182,6 +182,12 @@ CREATE TABLE IF NOT EXISTS kb_task_members (
     employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
     PRIMARY KEY (task_id, employee_id)
 );
+
+-- Настройки (key-value): Telegram-бот, резервная копия и пр.
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+);
 """
 
 
@@ -691,6 +697,21 @@ def _clean_int(val):
         return None
 
 
+# --------------------------------------------------------------------------- #
+# Настройки (key-value) — Telegram-бот и пр.
+# --------------------------------------------------------------------------- #
+def get_setting(db, key, default=""):
+    r = db.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    return r["value"] if r and r["value"] is not None else default
+
+
+def set_setting(db, key, value):
+    db.execute(
+        "INSERT INTO settings (key, value) VALUES (?,?) "
+        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (key, "" if value is None else str(value)))
+
+
 def _save_employee(eid):
     db = get_db()
     name = request.form.get("name", "").strip()
@@ -1176,6 +1197,41 @@ def backup_import():
 
     flash("База восстановлена из файла.", "ok")
     return redirect(url_for("index"))
+
+
+# --------------------------------------------------------------------------- #
+# Настройки (резервная копия + Telegram-бот)
+# --------------------------------------------------------------------------- #
+@app.route("/settings")
+@login_required
+def settings_page():
+    from os import path as _p
+    db = get_db()
+    size = _p.getsize(DB_PATH) if _p.exists(DB_PATH) else 0
+    tg_token = get_setting(db, "tg_token")
+    tg_admin = get_setting(db, "tg_admin_id")
+    tg_enabled = get_setting(db, "tg_enabled", "0") == "1"
+    return render_template(
+        "settings.html", db_size=size,
+        db_modified=_p.getmtime(DB_PATH) if _p.exists(DB_PATH) else 0,
+        tg_token=tg_token, tg_admin=tg_admin, tg_enabled=tg_enabled)
+
+
+@app.route("/settings/bot/save", methods=["POST"])
+@login_required
+def settings_bot_save():
+    """Сохранить настройки бота (токен и админ) — сам запуск происходит
+    ботом-процессом автоматически, когда заполнен токен и включён флаг."""
+    db = get_db()
+    token = request.form.get("tg_token", "").strip()
+    admin = request.form.get("tg_admin", "").strip()
+    enabled = 1 if request.form.get("tg_enabled") == "1" else 0
+    set_setting(db, "tg_token", token)
+    set_setting(db, "tg_admin_id", admin)
+    set_setting(db, "tg_enabled", "1" if enabled else "0")
+    db.commit()
+    flash("Настройки Telegram-бота сохранены", "ok")
+    return redirect(url_for("settings_page"))
 
 
 # --------------------------------------------------------------------------- #

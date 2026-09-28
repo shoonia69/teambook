@@ -11,4 +11,8 @@ if [ -z "$HR_PASSWORD" ]; then
   export HR_PASSWORD
 fi
 
+# Телеграм-бот: супервизор запускает воркер по мере настройки (токен/админ в БД).
+# Живёт в фоне, gunicorn — основной процесс (foreground).
+python /app/bot.py > /app/data/teambot_supervisor.log 2>&1 &
+
 exec gunicorn --bind 0.0.0.0:${PORT:-5000} --workers ${WEB_CONCURRENCY:-2} wsgi:app

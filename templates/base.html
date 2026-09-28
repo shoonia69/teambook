@@ -16,7 +16,7 @@
       <a href="{{ url_for('board') }}">Доска{% if board_overdue %}<span class="nav-badge">{{ '99+' if board_overdue > 99 else board_overdue }}</span>{% endif %}</a>
             <a href="{{ url_for('problems_page') }}">Проблемы{% if problems_count %}<span class="nav-badge">{{ problems_count }}</span>{% endif %}</a>
       <a href="{{ url_for('catalogs') }}">Справочники</a>
-      <a href="{{ url_for('backup_page') }}">Резервная копия</a>
+      <a href="{{ url_for('settings_page') }}">Настройки</a>
       <a href="{{ url_for('employee_new') }}">+ Добавить сотрудника</a>
     </nav>
   <div class="user-area">

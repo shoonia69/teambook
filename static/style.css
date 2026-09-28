@@ -88,6 +88,8 @@ a:hover { text-decoration: underline; }
 /* ---------- layout ---------- */
 .container { max-width: 1180px; margin: 24px auto; padding: 0 20px; }
 
+.form-row-label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 4px; font-weight: 600; }
+
 /* сводка на главной (цифры недели) */
 .stats-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
 .stat-card {

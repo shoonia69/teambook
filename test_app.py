@@ -583,6 +583,31 @@ prev = int(m.group(1)) if m else 0
 now = int(m2.group(1)) if m2 else 0
 check("счётчик уменьшается после удаления проблемы", now == prev - 1)
 
+# --- страница настроек: резервная копия + Telegram-бот ---
+r = c.get("/settings")
+h = r.get_data(as_text=True)
+check("страница настроек открывается",
+      r.status_code == 200 and "Telegram-бот" in h and "Резервная копия" in h and "tg_token" in h)
+# меню: пункт «Резервная копия» заменён на «Настройки»
+r = c.get("/")
+h = r.get_data(as_text=True)
+check("в меню есть «Настройки» вместо «Резервная копия»",
+      "Настройки" in h and "Резервная копия" not in h)
+# сохранение настроек бота пишет в settings
+c.post("/settings/bot/save", data={
+    "tg_token": "123:TESTTOKEN",
+    "tg_admin": "418650868",
+    "tg_enabled": "1",
+}, follow_redirects=True)
+sv = {r["key"]: r["value"] for r in dbq("SELECT * FROM settings")}
+check("настройки бота сохранены в БД",
+      sv.get("tg_token") == "123:TESTTOKEN" and sv.get("tg_admin_id") == "418650868"
+      and sv.get("tg_enabled") == "1")
+r = c.get("/settings")
+h = r.get_data(as_text=True)
+check("в форме подставлены сохранённые значения",
+      "123:TESTTOKEN" in h and "418650868" in h)
+
 print()
 if failures:
     print(f"ИТОГ: {len(failures)} ПРОВАЛЕНО -> {failures}")
