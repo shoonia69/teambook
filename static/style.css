@@ -282,8 +282,10 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
 }
 .gcal-cell {
   border: 1px solid var(--border); vertical-align: top;
-  min-height: 96px; height: 110px; padding: 4px 5px;
-  display: flex; flex-direction: column; gap: 2px; overflow: hidden;
+  height: 110px; padding: 4px 5px; overflow: hidden;
+}
+.gcal-cell .gcal-in {
+  display: flex; flex-direction: column; gap: 2px; align-items: stretch;
 }
 .gcal-we { background: rgba(255,255,255,.03); }
 .gcal-today { background: rgba(79,140,255,.14); }

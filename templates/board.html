@@ -135,6 +135,7 @@
             {% for d in week %}
               {% if d %}
               <td class="gcal-cell {% if d.weekend %}gcal-we{% endif %} {% if d.today %}gcal-today{% endif %}">
+                <div class="gcal-in">
                 <span class="gcal-num">{{ d.num }}</span>
                 {% for tst in d.tasks[:4] %}
                   <span class="gcal-task {% if tst.overdue %}gcal-task-overdue{% endif %}"
@@ -145,6 +146,7 @@
                 {% if d.tasks|length > 4 %}
                   <span class="gcal-more">+{{ d.tasks|length - 4 }} ещё</span>
                 {% endif %}
+                </div>
               </td>
               {% else %}
               <td class="gcal-cell gcal-empty"></td>
