@@ -24,6 +24,7 @@
       {% for t in backlog %}
       <div class="todo-item">
         <span class="todo-title">{{ t.title }}</span>
+        <button class="btn btn-xs" type="button" onclick="todoEdit({{ t.id }}, this)" title="Редактировать">✏</button>
         <div class="todo-actions">
           <form method="post" action="{{ url_for('todo_up', todo=t.id) }}" style="display:inline;margin:0">
             <button class="btn btn-xs" type="submit" title="Выше">↑</button>
@@ -57,6 +58,7 @@
       {% for t in today %}
       <div class="todo-item">
         <span class="todo-title">{{ t.title }}</span>
+        <button class="btn btn-xs" type="button" onclick="todoEdit({{ t.id }}, this)" title="Редактировать">✏</button>
         <div class="todo-actions">
           <form method="post" action="{{ url_for('todo_done', todo=t.id) }}" style="display:inline;margin:0">
             <button class="btn btn-xs primary" type="submit" title="Сделано">✓</button>
@@ -78,5 +80,21 @@
     {% endif %}
   </section>
 </div>
+
+<script>
+function todoEdit(id, btn) {
+  var item = btn.closest('.todo-item');
+  var span = item.querySelector('.todo-title');
+  var cur = span.textContent.trim();
+  var next = prompt('Задача (название):', cur);
+  if (next === null) return;            /* отмена */
+  next = next.trim();
+  if (!next || next === cur) return;
+  var fd = new FormData();
+  fd.append('title', next);
+  fetch('/todo/' + id + '/edit', { method: 'POST', body: fd })
+    .then(function () { location.reload(); });
+}
+</script>
 
 {% endblock %}

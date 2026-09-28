@@ -4,6 +4,7 @@ import os
 import tempfile
 import sys
 import datetime
+import sqlite3
 import re as _re
 
 tmp = tempfile.mkdtemp()
@@ -664,7 +665,22 @@ r = c.get("/todo/archive")
 h = r.get_data(as_text=True)
 check("todo: архив-страница показывает выполненную задачу",
       r.status_code == 200 and "Архив задач" in h and "Туду-задача Б" in h)
-# переставить порядок: добавить две и поменять местами
+# редактирование задачи (переименовать)
+ed_id = dbq("SELECT id FROM todo_items WHERE title='Туду-задача Б'")[0]["id"]
+r = c.post(f"/todo/{ed_id}/edit", data={"title": "Туду-задача Б (ред)"}, follow_redirects=True)
+check("todo: задача отредактирована",
+      r.status_code == 200 and len(dbq("SELECT id FROM todo_items WHERE id=? AND title='Туду-задача Б (ред)'", (ed_id,))) == 1)
+r = c.get("/todo")
+h = r.get_data(as_text=True)
+# кнопка редактирования видна на карточке
+c.post("/todo/add", data={"title": "Для редактирования"}, follow_redirects=True)
+r = c.get("/todo")
+h = r.get_data(as_text=True)
+check("todo: на карточках есть кнопка редактирования",
+      "todoEdit(" in h and "Редактировать" in h and "prompt(" in h)
+# переставить порядок: очистить todo, добавить две и поменять местами
+_conn = sqlite3.connect(os.path.join(tmp, "hr_notes.db"))
+_conn.execute("DELETE FROM todo_items"); _conn.commit(); _conn.close()
 c.post("/todo/add", data={"title": "Порядок-1"}, follow_redirects=True)
 c.post("/todo/add", data={"title": "Порядок-2"}, follow_redirects=True)
 p1 = dbq("SELECT id FROM todo_items WHERE title='Порядок-1'")[0]["id"]
@@ -676,7 +692,6 @@ check("todo: перестановка порядка (↑/↓)", so["Поряд�
 # авто-сброс: невыполненное, назначенное на вчера, возвращается в бэклог
 c.post("/todo/add", data={"title": "Сброс-вчера"}, follow_redirects=True)
 sid = dbq("SELECT id FROM todo_items WHERE title='Сброс-вчера'")[0]["id"]
-import sqlite3
 _conn = sqlite3.connect(os.path.join(tmp, "hr_notes.db"))
 _conn.execute("UPDATE todo_items SET status='today', assigned_date='2000-01-01' WHERE id=?", (sid,))
 _conn.commit(); _conn.close()

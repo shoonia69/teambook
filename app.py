@@ -2143,6 +2143,19 @@ def todo_add():
     return redirect(url_for("todo_page"))
 
 
+@app.route("/todo/<int:todo>/edit", methods=["POST"])
+@login_required
+def todo_edit(todo):
+    """Переименовать задачу в личном todo."""
+    title = request.form.get("title", "").strip()
+    if title:
+        db = get_db()
+        db.execute("UPDATE todo_items SET title=? WHERE id=?", (title, todo))
+        db.commit()
+        flash("Задача обновлена", "ok")
+    return redirect(url_for("todo_page"))
+
+
 @app.route("/todo/<int:todo>/today", methods=["POST"])
 @login_required
 def todo_today(todo):
