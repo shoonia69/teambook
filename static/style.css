@@ -492,3 +492,24 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
 }
 .todo-title { flex: 1; font-size: 14px; }
 .todo-actions { display: flex; gap: 4px; flex-shrink: 0; flex-wrap: wrap; }
+
+/* --- матрица Эйзенхауэра в личном todo (2×2, важно × срочно) --- */
+.eisen-row {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  align-items: stretch; width: 100%;
+}
+.eisen-quad {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px; min-height: 120px;
+  transition: box-shadow .12s ease;
+}
+.eisen-quad.drag-over { box-shadow: 0 0 0 2px var(--accent); }
+.eisen-qhead {
+  font-weight: 600; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;
+}
+.eisen-qicon { font-size: 16px; }
+.eisen-quad.q-iu { border-top: 3px solid var(--danger); }
+.eisen-quad.q-in { border-top: 3px solid #e67e22; }
+.eisen-quad.q-nu { border-top: 3px solid #f1c40f; }
+.eisen-quad.q-nn { border-top: 3px solid var(--accent); }
+@media (max-width: 700px) { .eisen-row { grid-template-columns: 1fr; } }

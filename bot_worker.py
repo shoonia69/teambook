@@ -436,42 +436,50 @@ async def show_move_targets(q, tid):
         f"Переместить «{t['title']}»\nВыберите столбец:", reply_markup=InlineKeyboardMarkup(kbd))
 
 
-# личный todo руководителя
+# личный todo руководителя: бэклог + матрица Эйзенхауэра
+QUAD_LABELS = [
+    ("q_iu", "🔴 Важно · Срочно"),
+    ("q_in", "🟠 Важно · Не срочно"),
+    ("q_nu", "🟡 Не важно · Срочно"),
+    ("q_nn", "🟢 Не важно · Не срочно"),
+]
+
+
 def todo_data():
     from datetime import date
     today_s = date.today().isoformat()
     c = db()
-    c.execute(
-        "UPDATE todo_items SET status='backlog', assigned_date='' "
-        "WHERE status='today' AND assigned_date != '' AND assigned_date != ?", (today_s,))
     c.execute("DELETE FROM todo_items WHERE status='done' AND done_date != ?", (today_s,))
     c.commit()
+    items = {}
+    for key, _label in QUAD_LABELS:
+        items[key] = [dict(r) for r in c.execute(
+            "SELECT * FROM todo_items WHERE status=? ORDER BY sort_order, id", (key,)).fetchall()]
     backlog = [dict(r) for r in c.execute(
         "SELECT * FROM todo_items WHERE status='backlog' ORDER BY sort_order, id").fetchall()]
-    today = [dict(r) for r in c.execute(
-        "SELECT * FROM todo_items WHERE status='today' ORDER BY sort_order, id").fetchall()]
     done = [dict(r) for r in c.execute(
         "SELECT * FROM todo_items WHERE status='done' AND done_date=? ORDER BY id DESC",
         (today_s,)).fetchall()]
     c.close()
-    return backlog, today, done
+    return backlog, items, done
 
 
 async def show_todo(q):
-    backlog, today, done = todo_data()
+    backlog, quad_items, done = todo_data()
 
     def _lines(label, items, symbol):
         out = [f"{label} ({len(items)})"]
         if not items:
             out.append("   (пусто)")
-        for i, t in enumerate(items, 1):
+        for t in items:
             out.append(f"   {symbol} {t['title']}")
         return out
 
     text = "📝 Мои задачи (личный todo)\n\n"
-    text += "\n".join(_lines("☀️ На сегодня", today, "✓"))
-    text += "\n\n" + "\n".join(_lines("📥 Бэклог", backlog, "•"))
-    text += "\n\n" + "\n".join(_lines("🗄 Архив (выполнено сегодня)", done, "—"))
+    text += "\n".join(_lines("📥 Бэклог", backlog, "•")) + "\n\n"
+    for key, label in QUAD_LABELS:
+        text += "\n".join(_lines(label, quad_items[key], "▪")) + "\n\n"
+    text += "\n".join(_lines("🗄 Архив (выполнено сегодня)", done, "—"))
     kbd = [[
         InlineKeyboardButton("➕ Задача в todo", callback_data="todo_add"),
         InlineKeyboardButton("← Главное меню", callback_data="help"),

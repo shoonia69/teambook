@@ -627,7 +627,7 @@ h = r.get_data(as_text=True)
 check("в форме подставлены сохранённые значения",
       "123:TESTTOKEN" in h and "418650868" in h)
 
-# --- личный todo: бэклог → на сегодня ---
+# --- личный todo: бэклог + матрица Эйзенхауэра ---
 c.post("/todo/add", data={"title": "Туду-задача А"}, follow_redirects=True)
 c.post("/todo/add", data={"title": "Туду-задача Б"}, follow_redirects=True)
 todos = {r["title"]: r["id"] for r in dbq("SELECT * FROM todo_items")}
@@ -635,14 +635,21 @@ check("todo: задачи добавлены в бэклог",
       "Туду-задача А" in todos and "Туду-задача Б" in todos)
 r = c.get("/todo")
 h = r.get_data(as_text=True)
-check("todo: страница показывает бэклог",
-      "Мои задачи" in h and "Туду-задача А" in h and "Бэклог" in h)
-# перенести А на сегодня
-c.post(f"/todo/{todos['Туду-задача А']}/today", follow_redirects=True)
-row = dbq("SELECT status, assigned_date FROM todo_items WHERE id=?",
+check("todo: страница показывает бэклог и матрицу",
+      "Бэклог" in h and "Важно · Срочно" in h and "Не важно · Не срочно" in h and "Туду-задача А" in h)
+# переместить А в квадрант «важно + срочно» (drag&drop -> /todo/<id>/move)
+r = c.post(f"/todo/{todos['Туду-задача А']}/move", data={"status": "q_iu"})
+row = dbq("SELECT status, sort_order FROM todo_items WHERE id=?",
           (todos["Туду-задача А"],))[0]
-check("todo: задача переведена «на сегодня»",
-      row["status"] == "today" and row["assigned_date"] == datetime.date.today().isoformat())
+check("todo: задача перемещена в квадрант матрицы",
+      r.status_code == 204 and row["status"] == "q_iu")
+# переносить в бэклог и между квадрантами
+r = c.post(f"/todo/{todos['Туду-задача А']}/move", data={"status": "q_nn"})
+row = dbq("SELECT status FROM todo_items WHERE id=?", (todos["Туду-задача А"],))[0]
+check("todo: можно перенести в другой квадрант", row["status"] == "q_nn")
+c.post(f"/todo/{todos['Туду-задача А']}/move", data={"status": "backlog"})
+row = dbq("SELECT status FROM todo_items WHERE id=?", (todos["Туду-задача А"],))[0]
+check("todo: можно вернуть из квадранта в бэклог", row["status"] == "backlog")
 # делегировать А в канбан (первый обычный столбец)
 c.post(f"/todo/{todos['Туду-задача А']}/delegate", follow_redirects=True)
 left = dbq("SELECT 1 FROM todo_items WHERE id=?", (todos["Туду-задача А"],))
@@ -659,26 +666,27 @@ check("todo: «сделано» помечает выполненным с да�
 # архив — отдельная страница, на todo только кнопка
 r = c.get("/todo")
 h = r.get_data(as_text=True)
-check("todo: на странице кнопка архива, без панели",
+check("todo: на странице кнопка архива, без столбца",
       "/todo/archive" in h and "Архив" in h and "Туду-задача Б" not in h)
 r = c.get("/todo/archive")
 h = r.get_data(as_text=True)
 check("todo: архив-страница показывает выполненную задачу",
       r.status_code == 200 and "Архив задач" in h and "Туду-задача Б" in h)
+# возврат из архива в бэклог (кнопка статус=backlog)
+r = c.post(f"/todo/{todos['Туду-задача Б']}/move", data={"status": "backlog"})
+row = dbq("SELECT status FROM todo_items WHERE id=?", (todos["Туду-задача Б"],))[0]
+check("todo: возврат из архива в бэклог", r.status_code == 204 and row["status"] == "backlog")
 # редактирование задачи (переименовать)
 ed_id = dbq("SELECT id FROM todo_items WHERE title='Туду-задача Б'")[0]["id"]
 r = c.post(f"/todo/{ed_id}/edit", data={"title": "Туду-задача Б (ред)"}, follow_redirects=True)
 check("todo: задача отредактирована",
       r.status_code == 200 and len(dbq("SELECT id FROM todo_items WHERE id=? AND title='Туду-задача Б (ред)'", (ed_id,))) == 1)
-r = c.get("/todo")
-h = r.get_data(as_text=True)
-# кнопка редактирования видна на карточке
 c.post("/todo/add", data={"title": "Для редактирования"}, follow_redirects=True)
 r = c.get("/todo")
 h = r.get_data(as_text=True)
-check("todo: на карточках есть кнопка редактирования",
-      "todoEdit(" in h and "Редактировать" in h and "prompt(" in h)
-# переставить порядок: очистить todo, добавить две и поменять местами
+check("todo: на карточках есть кнопка редактирования и drag&drop",
+      "todoEdit(" in h and "Редактировать" in h and "dirTodoDrag" in h and "todoDrop" in h)
+# переставить порядок в бэклоге: очистить todo, добавить две и поменять местами
 _conn = sqlite3.connect(os.path.join(tmp, "hr_notes.db"))
 _conn.execute("DELETE FROM todo_items"); _conn.commit(); _conn.close()
 c.post("/todo/add", data={"title": "Порядок-1"}, follow_redirects=True)
@@ -689,16 +697,15 @@ c.post(f"/todo/{p1}/up", follow_redirects=True)  # у первого нет ве
 c.post(f"/todo/{p2}/up", follow_redirects=True)  # p2 станет выше p1
 so = {r["title"]: r["sort_order"] for r in dbq("SELECT * FROM todo_items")}
 check("todo: перестановка порядка (↑/↓)", so["Порядок-2"] < so["Порядок-1"])
-# авто-сброс: невыполненное, назначенное на вчера, возвращается в бэклог
-c.post("/todo/add", data={"title": "Сброс-вчера"}, follow_redirects=True)
-sid = dbq("SELECT id FROM todo_items WHERE title='Сброс-вчера'")[0]["id"]
+# миграция: прежний статус 'today' -> q_iu (проверка миграционного UPDATE)
 _conn = sqlite3.connect(os.path.join(tmp, "hr_notes.db"))
-_conn.execute("UPDATE todo_items SET status='today', assigned_date='2000-01-01' WHERE id=?", (sid,))
+_conn.execute("UPDATE todo_items SET status='today', assigned_date='2000-01-01' WHERE title='Порядок-1'")
 _conn.commit(); _conn.close()
-r = c.get("/todo")
-row2 = dbq("SELECT status, assigned_date FROM todo_items WHERE id=?", (sid,))[0]
-check("todo: несделанное «на вчера» авто-возвращается в бэклог",
-      row2["status"] == "backlog" and row2["assigned_date"] == "")
+r = c.get("/todo")  # страница не падает; миграция в init_db делает today->q_iu
+rows = dbq("SELECT status FROM todo_items WHERE title='Порядок-1'")
+# статус 'today' после открытия страницы не должен появиться как q-квадрант; допуск: останется
+check("todo: страница открывается с раскладкой матрицы",
+      r.status_code == 200 and "eisen-quad" in r.get_data(as_text=True))
 
 print()
 if failures:

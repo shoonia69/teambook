@@ -15,7 +15,8 @@
   <div class="todo-item done">
     <span class="todo-title"><s>{{ t.title }}</s></span>
     <div class="todo-actions">
-      <form method="post" action="{{ url_for('todo_backlog', todo=t.id) }}" style="display:inline;margin:0">
+      <form method="post" action="{{ url_for('todo_move', todo=t.id) }}" style="display:inline;margin:0">
+        <input type="hidden" name="status" value="backlog">
         <button class="btn btn-xs" type="submit" title="Вернуть в бэклог">↩ Вернуть</button>
       </form>
       <form method="post" action="{{ url_for('todo_delete', todo=t.id) }}" style="display:inline;margin:0"

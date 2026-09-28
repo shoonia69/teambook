@@ -189,9 +189,12 @@ CREATE TABLE IF NOT EXISTS settings (
     value TEXT
 );
 
--- Личный todo руководителя: бэклог задач и выбор «на сегодня».
--- status: 'backlog' (в отложенном бэклоге) | 'today' (назначено на сегодня)
--- assigned_date: дата, на которую задача назначена «на сегодня» (для авто-сброса)
+-- Личный todo руководителя: бэклог задач + матрица Эйзенхауэра (важно×срочно).
+-- status: 'backlog' (вход для новых) | квадранты 'q_iu'/'q_in'/'q_nu'/'q_nn'
+--         | 'done' (архив: выполненные за сегодня)
+--   q_iu = важно + срочно, q_in = важно + не срочно,
+--   q_nu = не важно + срочно, q_nn = не важно + не срочно
+-- assigned_date: резерв (не используется с 2026, квадранты вместо «на сегодня»)
 CREATE TABLE IF NOT EXISTS todo_items (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     title         TEXT NOT NULL,
@@ -243,6 +246,8 @@ def init_db():
     todo_cols = {r[1] for r in db.execute("PRAGMA table_info(todo_items)").fetchall()}
     if "done_date" not in todo_cols:
         db.execute("ALTER TABLE todo_items ADD COLUMN done_date TEXT DEFAULT ''")
+    # миграция: прежний статус 'today' («на сегодня») -> квадрант «важно + срочно»
+    db.execute("UPDATE todo_items SET status='q_iu' WHERE status='today'")
 
     # Миграция канбана: колонки архива/корзины + many-to-many исполнители.
     kb_cols = {r[1] for r in db.execute("PRAGMA table_info(kb_tasks)").fetchall()}
@@ -2092,25 +2097,33 @@ def board_task_purge(tid):
 def todo_page():
     db = get_db()
     today_s = date.today().isoformat()
-    # авто-сброс: невыполненные «на вчера» возвращаются в бэклог
-    db.execute(
-        "UPDATE todo_items SET status='backlog', assigned_date='' "
-        "WHERE status='today' AND assigned_date != '' AND assigned_date != ?",
-        (today_s,))
     # архив — только задачи, выполненные сегодня; старьё из него удаляем
     db.execute("DELETE FROM todo_items WHERE status='done' AND done_date != ?", (today_s,))
     db.commit()
     backlog = db.execute(
         "SELECT * FROM todo_items WHERE status='backlog' ORDER BY sort_order, id"
     ).fetchall()
-    today = db.execute(
-        "SELECT * FROM todo_items WHERE status='today' ORDER BY sort_order, id"
-    ).fetchall()
+    quad_tasks = {}
+    for q in QUADRANTS:
+        quad_tasks[q["key"]] = db.execute(
+            "SELECT * FROM todo_items WHERE status=? ORDER BY sort_order, id",
+            (q["key"],)).fetchall()
     archive = db.execute(
         "SELECT * FROM todo_items WHERE status='done' AND done_date=? "
         "ORDER BY id DESC", (today_s,)
     ).fetchall()
-    return render_template("todo.html", backlog=backlog, today=today, archive=archive)
+    return render_template(
+        "todo.html", backlog=backlog, quadrants=QUADRANTS,
+        quad_tasks=quad_tasks, archive=archive)
+
+
+# Квадранты Эйзенхауэра в личном todo (важно × срочно)
+QUADRANTS = [
+    {"key": "q_iu", "title": "Важно · Срочно",  "icon": "🔴", "cls": "q-iu"},
+    {"key": "q_in", "title": "Важно · Не срочно", "icon": "🟠", "cls": "q-in"},
+    {"key": "q_nu", "title": "Не важно · Срочно", "icon": "🟡", "cls": "q-nu"},
+    {"key": "q_nn", "title": "Не важно · Не срочно", "icon": "🟢", "cls": "q-nn"},
+]
 
 
 @app.route("/todo/archive")
@@ -2156,35 +2169,23 @@ def todo_edit(todo):
     return redirect(url_for("todo_page"))
 
 
-@app.route("/todo/<int:todo>/today", methods=["POST"])
+@app.route("/todo/<int:todo>/move", methods=["POST"])
 @login_required
-def todo_today(todo):
-    db = get_db()
-    # решает сам руководитель, mark как "на сегодня"
-    nxt = db.execute(
-        "SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM todo_items "
-        "WHERE status='today'").fetchone()["n"]
-    db.execute(
-        "UPDATE todo_items SET status='today', assigned_date=?, sort_order=? WHERE id=?",
-        (date.today().isoformat(), nxt, todo))
-    db.commit()
-    flash("Задача на сегодня", "ok")
-    return redirect(url_for("todo_page"))
-
-
-@app.route("/todo/<int:todo>/backlog", methods=["POST"])
-@login_required
-def todo_backlog(todo):
+def todo_move(todo):
+    """Переставить задачу между бэклогом и квадрантами матрицы (drag&drop)."""
+    target = request.form.get("status", "")
+    valid = {"backlog"} | {q["key"] for q in QUADRANTS}
+    if target not in valid:
+        return "", 204
     db = get_db()
     nxt = db.execute(
-        "SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM todo_items "
-        "WHERE status='backlog'").fetchone()["n"]
+        "SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM todo_items WHERE status=?",
+        (target,)).fetchone()["n"]
     db.execute(
-        "UPDATE todo_items SET status='backlog', assigned_date='', sort_order=? WHERE id=?",
-        (nxt, todo))
+        "UPDATE todo_items SET status=?, assigned_date='', sort_order=? WHERE id=?",
+        (target, nxt, todo))
     db.commit()
-    flash("Возвращено в бэклог", "ok")
-    return redirect(url_for("todo_page"))
+    return "", 204
 
 
 @app.route("/todo/<int:todo>/done", methods=["POST"])
