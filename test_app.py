@@ -393,19 +393,16 @@ c.post("/board/column/add", data={"name": "В работе"}, follow_redirects=T
 c.post("/board/column/add", data={"name": "Готово"}, follow_redirects=True)
 work = dbq("SELECT id, name, kind, locked FROM kb_columns WHERE name='В работе'")[0]
 done = dbq("SELECT id, name, kind, locked FROM kb_columns WHERE name='Готово'")[0]
-backlog = dbq("SELECT id, name, kind, locked FROM kb_columns WHERE kind='kanban' AND locked=1")[0]
-check("системный Бэклог создан и заблокирован", backlog["name"] == "📥 Бэклог" and backlog["locked"] == 1)
+# с прошлых версий на канбане НЕ должно быть системных колонок (Бэклог остался только в todo)
+sys_cols = dbq("SELECT * FROM kb_columns WHERE kind='kanban' AND locked=1")
+check("на канбане нет системного Бэклога", len(sys_cols) == 0)
 check("два обычных столбца созданы", work["name"] == "В работе" and done["name"] == "Готово")
 # переименовать обычный столбец
 c.post(f"/board/column/{done['id']}/rename", data={"name": "Сделано"}, follow_redirects=True)
 check("столбец переименован",
       len(dbq("SELECT * FROM kb_columns WHERE id=? AND name='Сделано'", (done["id"],))) == 1)
-# переименовать системный (Бэклог) запрещено
-c.post(f"/board/column/{backlog['id']}/rename", data={"name": "Xxx"}, follow_redirects=True)
-check("системный Бэклог нельзя переименовать",
-      len(dbq("SELECT * FROM kb_columns WHERE id=? AND name='📥 Бэклог'", (backlog["id"],))) == 1)
 
-# создать задачу с двумя сотрудниками и датами — она должна попасть в Бэклог
+# создать задачу с двумя сотрудниками и датами — она должна попасть в первый обычный столбец
 emp_kb = dbq("SELECT id, name FROM employees WHERE active=1 LIMIT 1")[0]
 emp_kb2 = dbq("SELECT id, name FROM employees WHERE active=1 AND id!=? LIMIT 1",
               (emp_kb["id"],))[0]
@@ -417,8 +414,8 @@ c.post("/board/task/add", data={
 }, follow_redirects=True)
 tasks = dbq("SELECT * FROM kb_tasks WHERE title='Задача А'")
 mem = dbq("SELECT employee_id FROM kb_task_members WHERE task_id=?", (tasks[0]["id"],))
-check("новая задача упала в Бэклог",
-      len(tasks) == 1 and tasks[0]["column_id"] == backlog["id"])
+check("новая задача упала в первый обычный столбец",
+      len(tasks) == 1 and tasks[0]["column_id"] == work["id"])
 # --- уведомления в шапке: просроченная задача попадает в колокольчик ---
 overdue_title = "Просроченная задача ЮЗ"
 c.post("/board/task/add", data={
@@ -457,8 +454,8 @@ check("задача создана с датами и двумя исполни�
 # добавить задачу без исполнителя/дат
 c.post("/board/task/add", data={"title": "Задача Б"}, follow_redirects=True)
 taskB = dbq("SELECT id FROM kb_tasks WHERE title='Задача Б'")[0]
-check("вторая новая задача тоже в Бэклоге",
-      dbq("SELECT column_id FROM kb_tasks WHERE id=?", (taskB["id"],))[0]["column_id"] == backlog["id"])
+check("вторая новая задача тоже в первом обычном столбце",
+      dbq("SELECT column_id FROM kb_tasks WHERE id=?", (taskB["id"],))[0]["column_id"] == work["id"])
 
 # страница рендерит карточки и гант-элементы
 r = c.get(f"/board?month=10&year=2026")
@@ -489,16 +486,15 @@ check("в модалке отмечены оба исполнителя",
 # поиск-фильтр присутствует
 check("в модалке есть поле поиска исполнителя", "tm-employee-search" in hm)
 
-# drag&drop: переместить задачу из Бэклога в обычный столбец
+# drag&drop: переместить задачу в другой столбец
 r = c.post(f"/board/task/{tasks[0]['id']}/move", data={"column_id": str(work["id"])})
 check("перемещение задачи меняет столбец",
       r.status_code == 204 and dbq("SELECT column_id FROM kb_tasks WHERE id=?",
                                    (tasks[0]["id"],))[0]["column_id"] == work["id"])
 
-# Эйзенхауэр откачен — оставляем только проверку, что новых задач (Бэклог) нет в БД
-# и переходим к редактированию задачи (в колонке work)
+# редактирование задачи (в колонке work)
 r = c.post(f"/board/task/{tasks[0]['id']}/edit", data={
-    "title": "Задача А (ред)", "column_id": str(backlog["id"]),
+    "title": "Задача А (ред)", "column_id": str(work["id"]),
     "employee_id": [str(emp_kb2["id"])],
     "start_date": "2026-11-02", "due_date": "2026-11-05", "description": "обновлено",
 }, follow_redirects=True)
@@ -513,10 +509,11 @@ c.post(f"/board/task/{tasks[0]['id']}/move", data={"column_id": str(work["id"])}
 r = c.post(f"/board/column/{work['id']}/delete", follow_redirects=True)
 check("столбец с задачами не удаляется",
       len(dbq("SELECT * FROM kb_columns WHERE id=?", (work["id"],))) == 1)
-# системный квадрант/Бэклог нельзя удалить даже пустой
-r = c.post(f"/board/column/{backlog['id']}/delete", follow_redirects=True)
-check("Бэклог нельзя удалить (системный)",
-      len(dbq("SELECT * FROM kb_columns WHERE id=?", (backlog["id"],))) == 1)
+# пустой обычный столбец удаляется
+empty_col = dbq("SELECT id FROM kb_columns WHERE name='Сделано'")[0]
+r = c.post(f"/board/column/{empty_col['id']}/delete", follow_redirects=True)
+check("пустой обычный столбец удаляется",
+      len(dbq("SELECT * FROM kb_columns WHERE id=?", (empty_col["id"],))) == 0)
 # «удаление» = в корзину (soft delete), задача исчезает с доски но остаётся в БД
 r1 = c.post(f"/board/task/{taskB['id']}/trash")
 r2 = c.post(f"/board/task/{tasks[0]['id']}/trash")
@@ -559,10 +556,10 @@ check("очистка корзины",
 # задача Б после restore снова активна — уводим её в корзину, чтобы столбец стал пустым
 c.post(f"/board/task/{taskB['id']}/trash")
 c.post(f"/board/task/{tasks[0]['id']}/trash")
-# пустой обычный столбец удаляется
-c.post(f"/board/column/{work['id']}/delete", follow_redirects=True)
+# пустой обычный столбец («Сделано», изначально «Готово») удаляется
+r = c.post(f"/board/column/{done['id']}/delete", follow_redirects=True)
 check("пустой столбец удалён",
-      len(dbq("SELECT * FROM kb_columns WHERE id=?", (work["id"],))) == 0)
+      len(dbq("SELECT * FROM kb_columns WHERE id=?", (done["id"],))) == 0)
 
 # --- счётчик проблем в меню ---
 emp_p = dbq("SELECT id FROM employees WHERE active=1 LIMIT 1")[0]["id"]
@@ -625,13 +622,13 @@ row = dbq("SELECT status, assigned_date FROM todo_items WHERE id=?",
           (todos["Туду-задача А"],))[0]
 check("todo: задача переведена «на сегодня»",
       row["status"] == "today" and row["assigned_date"] == datetime.date.today().isoformat())
-# делегировать А в канбан (Бэклог)
+# делегировать А в канбан (первый обычный столбец)
 c.post(f"/todo/{todos['Туду-задача А']}/delegate", follow_redirects=True)
 left = dbq("SELECT 1 FROM todo_items WHERE id=?", (todos["Туду-задача А"],))
 kb = dbq("SELECT * FROM kb_tasks WHERE title='Туду-задача А'")
-backlog = dbq("SELECT id FROM kb_columns WHERE locked=1 AND kind='kanban'")[0]["id"]
-check("todo: делегирование убирает из todo и создаёт в канбане-Бэклоге",
-      len(left) == 0 and len(kb) == 1 and kb[0]["column_id"] == backlog)
+first = dbq("SELECT id FROM kb_columns WHERE kind='kanban' ORDER BY sort_order, id LIMIT 1")[0]["id"]
+check("todo: делегирование убирает из todo и создаёт на канбане",
+      len(left) == 0 and len(kb) == 1 and kb[0]["column_id"] == first)
 # пометить Б сделанным (удалить)
 c.post(f"/todo/{todos['Туду-задача Б']}/done", follow_redirects=True)
 check("todo: «сделано» удаляет задачу",

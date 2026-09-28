@@ -151,8 +151,8 @@ CREATE TABLE IF NOT EXISTS problems (
 -- Канбан-доска и гант (задачи и сроки)
 
 -- Столбцы канбана (свободные, создаются руководителем)
--- kind: 'kanban' = обычный столбец/Бэклог
--- locked=1 = системный (Бэклог: нельзя удалить/переименовать)
+-- kind: 'kanban' = обычный столбец канбана
+-- locked=1 = системный столбец (не создаётся; Бэклог остался только в личном todo)
 CREATE TABLE IF NOT EXISTS kb_columns (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     name        TEXT NOT NULL,
@@ -264,25 +264,44 @@ def init_db():
         except Exception:
             pass
 
-    # --- Системный столбец Бэклог (для всех новых заявок) ---
+    # --- Столбцы канбана: никаких системных колонок не создаём ---
+    # Бэклог остался только в личном todo руководителя.
     kcols = {r[1] for r in db.execute("PRAGMA table_info(kb_columns)").fetchall()}
     if "kind" not in kcols:
         db.execute("ALTER TABLE kb_columns ADD COLUMN kind TEXT NOT NULL DEFAULT 'kanban'")
     if "locked" not in kcols:
         db.execute("ALTER TABLE kb_columns ADD COLUMN locked INTEGER NOT NULL DEFAULT 0")
 
-    def _ensure_sys_column(kind, name, sort_order):
-        row = db.execute("SELECT id FROM kb_columns WHERE kind=? LIMIT 1", (kind,)).fetchone()
-        if row:
-            db.execute("UPDATE kb_columns SET locked=1, name=?, sort_order=? WHERE id=?",
-                       (name, sort_order, row["id"]))
-            return row["id"]
-        cur = db.execute(
-            "INSERT INTO kb_columns (name, kind, locked, sort_order) VALUES (?,?,1,?)",
-            (name, kind, sort_order))
-        return cur.lastrowid
+    # Убираем остатки системного 📥 Бэклога с канбана (если он остался с прошлых
+    # версий и является системной колонкой): задачи переносим в первый обычный
+    # столбец, а саму колонку удаляем. Если обычных столбцов нет — Бэклог просто
+    # становится обычным пользовательским столбцом (можно удалить вручную).
+    sys_backlog = db.execute(
+        "SELECT id FROM kb_columns WHERE kind='kanban' AND locked=1 LIMIT 1").fetchone()
+    if sys_backlog:
+        target = db.execute(
+            "SELECT id FROM kb_columns WHERE kind='kanban' AND locked=0 "
+            "ORDER BY sort_order, id LIMIT 1").fetchone()
+        if target:
+            db.execute(
+                "UPDATE kb_tasks SET column_id=? WHERE column_id=? AND "
+                "archived_at='' AND deleted_at=''",
+                (target["id"], sys_backlog["id"]))
+            db.execute("DELETE FROM kb_columns WHERE id=?", (sys_backlog["id"],))
+            print("[TeamBook] Системный 📥 Бэклог удалён с канбана, задачи перенесены")
+        else:
+            db.execute("UPDATE kb_columns SET locked=0, sort_order=0 WHERE id=?",
+                       (sys_backlog["id"],))
+            print("[TeamBook] Других столбцов нет — 📥 Бэклог стал обычным столбцом")
 
-    backlog_id = _ensure_sys_column("kanban", "📥 Бэклог", -100)
+    # Задачи без столбца (старая схема) -> в первый обычный столбец; если столбцов
+    # нет совсем, оставляем column_id=NULL (доска их не прячет).
+    first_col = db.execute(
+        "SELECT id FROM kb_columns WHERE kind='kanban' ORDER BY sort_order, id LIMIT 1"
+    ).fetchone()
+    if first_col:
+        db.execute("UPDATE kb_tasks SET column_id=? WHERE column_id IS NULL",
+                   (first_col["id"],))
 
     # Откат матрицы Эйзенхауэра: если с прошлого деплоя остались квадранты-колонки
     # (kind='emi1'..'emi4'), убираем их. Их задачи уже перенесены в Бэклог
@@ -297,10 +316,6 @@ def init_db():
             print("[TeamBook] Откат Эйзенхауэра: удалена колонка emi из kb_tasks")
         except Exception:
             pass  # DROP COLUMN может быть недоступен в старых SQLite — колонка останется, код её не использует
-
-    # задачи без столбца (например, из старой схемы) -> в Бэклог
-    db.execute("UPDATE kb_tasks SET column_id=? WHERE column_id IS NULL",
-               (backlog_id,))
 
     db.commit()
     db.close()
@@ -446,7 +461,7 @@ def _notifications(db):
     for r in rows:
         item = {
             "id": r["id"], "title": r["title"],
-            "due_date": r["due_date"], "col_name": r["col_name"] or "Бэклог",
+            "due_date": r["due_date"], "col_name": r["col_name"] or "—",
             "emp": ", ".join(m["name"] for m in members.get(r["id"], [])),
         }
         if r["due_date"] < today_s:
@@ -1848,15 +1863,21 @@ def board_task_add():
         flash("Укажите название задачи", "error")
         return redirect(url_for("board"))
     db = get_db()
-    # все новые заявки (и с канбана, и из Эйзенхауэра) падают в Бэклог
-    backlog = db.execute(
-        "SELECT id FROM kb_columns WHERE locked=1 AND kind='kanban' LIMIT 1"
-    ).fetchone()
-    column_id = backlog["id"] if backlog else None
+    # задача создаётся в столбце из формы (если передан валидный id),
+    # иначе — в первый обычный столбец канбана
+    cid = _clean_int(request.form.get("column_id"))
+    if cid and not db.execute(
+            "SELECT 1 FROM kb_columns WHERE id=? AND kind='kanban'", (cid,)).fetchone():
+        cid = None
+    if not cid:
+        first = db.execute(
+            "SELECT id FROM kb_columns WHERE kind='kanban' "
+            "ORDER BY sort_order, id LIMIT 1").fetchone()
+        cid = first["id"] if first else None
     cur = db.execute(
         "INSERT INTO kb_tasks (title, column_id, description, start_date, due_date) "
         "VALUES (?,?,?,?,?)",
-        (title, column_id,
+        (title, cid,
          request.form.get("description", ""),
          request.form.get("start_date", ""),
          request.form.get("due_date", "")),
@@ -2125,20 +2146,20 @@ def todo_delete(todo):
 @app.route("/todo/<int:todo>/delegate", methods=["POST"])
 @login_required
 def todo_delegate(todo):
-    """Делегировать: личная задача → 📥 Бэклог канбана (для распределения)."""
+    """Делегировать: личная задача → канбан (в первый обычный столбец)."""
     db = get_db()
     t = db.execute("SELECT * FROM todo_items WHERE id=?", (todo,)).fetchone()
     if t:
-        backlog = db.execute(
-            "SELECT id FROM kb_columns WHERE locked=1 AND kind='kanban' LIMIT 1"
-        ).fetchone()
+        first = db.execute(
+            "SELECT id FROM kb_columns WHERE kind='kanban' "
+            "ORDER BY sort_order, id LIMIT 1").fetchone()
         db.execute(
             "INSERT INTO kb_tasks (title, column_id, description) VALUES (?,?,?)",
-            (t["title"], backlog["id"] if backlog else None,
+            (t["title"], first["id"] if first else None,
              "Делегировано из личного todo"))
         db.execute("DELETE FROM todo_items WHERE id=?", (todo,))
         db.commit()
-        flash("Отправлено в 📥 Бэклог канбана", "ok")
+        flash("Отправлено на канбан", "ok")
     return redirect(url_for("todo_page"))
 
 

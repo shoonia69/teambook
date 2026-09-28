@@ -18,10 +18,6 @@
         <input type="text" name="name" placeholder="Новый столбец..." required>
         <button class="btn small" type="submit">+ Столбец</button>
       </form>
-      <form method="post" action="{{ url_for('board_task_add') }}" style="display:flex;gap:8px;flex:1;min-width:220px">
-        <input type="text" name="title" placeholder="+ задача (упадёт в 📥 Бэклог)..." required style="flex:1">
-        <button class="btn small primary" type="submit">+</button>
-      </form>
     </div>
 
     <div class="kb-filter-bar">
@@ -96,12 +92,17 @@
             <div class="kb-empty">—</div>
             {% endfor %}
           </div>
+          <form method="post" action="{{ url_for('board_task_add') }}" class="kb-add-task">
+            <input type="hidden" name="column_id" value="{{ col.id }}">
+            <input type="text" name="title" placeholder="+ задача..." required>
+            <button class="btn btn-xs primary" type="submit">+</button>
+          </form>
         </div>
       {% endfor %}
     </div>
     {% else %}
     <div class="card"><div class="empty">
-      Доска пока пуста — создайте первый столбец («+ Столбец») или добавьте задачу в 📥 Бэклог.
+      Доска пока пуста — создайте первый столбец («+ Столбец»).
     </div></div>
     {% endif %}
   </section>

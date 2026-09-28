@@ -432,10 +432,9 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         PENDING.pop(f"newtask:{uid}")
         title, _, desc = text.partition("|")
         columns = all_columns()
-        backlog = next((c for c in columns if c["locked"] == 1), None)
-        tid = add_task(title.strip(), backlog["id"] if backlog else None, desc.strip())
-        await update.message.reply_text(f"✅ Задача #{tid} добавлена в 📥 Бэклог.",
-                                        reply_markup=main_kb())
+        first = columns[0] if columns else None
+        tid = add_task(title.strip(), first["id"] if first else None, desc.strip())
+        await update.message.reply_text(f"✅ Задача #{tid} добавлена.", reply_markup=main_kb())
         return
 
     # попытка переместить: /m12
