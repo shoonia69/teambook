@@ -226,6 +226,21 @@ function closeCard() {
   document.getElementById('card-modal').style.display = 'none';
   document.getElementById('card-modal-body').innerHTML = '';
 }
+
+/* Живой поиск исполнителя в модалке карточки (глобальная функция: инлайн-скрипт
+   из фрагмента модалки НЕ выполняется браузером через innerHTML, поэтому он здесь). */
+function tmFilterEmployees(inp) {
+  var q = inp.value.trim().toLowerCase();
+  var labels = document.querySelectorAll('#tm-employee-list .tm-emp');
+  var shown = 0;
+  labels.forEach(function (l) {
+    var hit = !q || (l.dataset.name ? l.dataset.name.indexOf(q) !== -1 : false);
+    l.style.display = hit ? '' : 'none';
+    if (hit) shown++;
+  });
+  var none = document.getElementById('tm-no-match');
+  if (none) none.style.display = shown ? 'none' : '';
+}
 </script>
 
 {% endblock %}

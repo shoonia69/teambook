@@ -361,6 +361,7 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
 .tm-emp.tm-selected { background: var(--accent); color: #fff; }
 .tm-note { font-size: 12.5px; color: var(--muted); background: var(--panel2);
   border: 1px dashed var(--border); border-radius: 6px; padding: 8px 10px; }
+.tm-no-match { font-size: 12.5px; color: var(--muted); padding: 8px; text-align: center; }
 
 /* чипы исполнителей на карточке */
 .kb-card .emp { display: inline-block; }

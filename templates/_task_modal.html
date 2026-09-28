@@ -22,6 +22,7 @@
     {% if not employees %}
       <div class="sub">В справочнике нет активных сотрудников</div>
     {% endif %}
+    <div class="tm-no-match" id="tm-no-match" style="display:none">Никого не найдено</div>
   </div>
   <label>Статус (столбец)</label>
   <select name="column_id">
@@ -50,13 +51,3 @@
   ↕ Перетащите карточку на доске в <em>Архив</em> или <em>Корзину</em> —
   здесь доступна только правка. Удалить можно в корзине.
 </div>
-
-<script>
-function tmFilterEmployees(inp) {
-  var q = inp.value.trim().toLowerCase();
-  var labels = document.querySelectorAll('#tm-employee-list .tm-emp');
-  labels.forEach(function (l) {
-    l.style.display = l.dataset.name.indexOf(q) === 0 ? '' : 'none';
-  });
-}
-</script>
