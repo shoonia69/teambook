@@ -2113,6 +2113,19 @@ def todo_page():
     return render_template("todo.html", backlog=backlog, today=today, archive=archive)
 
 
+@app.route("/todo/archive")
+@login_required
+def todo_archive():
+    """Архив личного todo: задачи, выполненные сегодня."""
+    db = get_db()
+    today_s = date.today().isoformat()
+    items = db.execute(
+        "SELECT * FROM todo_items WHERE status='done' AND done_date=? "
+        "ORDER BY id DESC", (today_s,)
+    ).fetchall()
+    return render_template("todo_archive.html", archive=items)
+
+
 @app.route("/todo/add", methods=["POST"])
 @login_required
 def todo_add():

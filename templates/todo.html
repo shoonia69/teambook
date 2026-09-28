@@ -7,6 +7,8 @@
   <span class="sub" style="font-size:13px">
     Бэклог → «на сегодня». Несделанное на завтра вернётся в бэклог автоматически.
   </span>
+  <div class="spacer"></div>
+  <a class="btn" href="{{ url_for('todo_archive') }}">🗄 Архив ({{ archive|length }})</a>
 </div>
 
 <div class="todo-wrap">
@@ -73,30 +75,6 @@
     </div>
     {% else %}
     <div class="empty">Сегодня свободно. Возьмите задачи из бэклога.</div>
-    {% endif %}
-  </section>
-
-  <!-- АРХИВ: выполненные сегодня -->
-  <section class="todo-panel">
-    <div class="panel-title">🗄 Архив (выполнено сегодня) · {{ archive|length }}</div>
-    {% if archive %}
-    <div class="todo-list">
-      {% for t in archive %}
-      <div class="todo-item done">
-        <span class="todo-title"><s>{{ t.title }}</s></span>
-        <div class="todo-actions">
-          <form method="post" action="{{ url_for('todo_backlog', todo=t.id) }}" style="display:inline;margin:0">
-            <button class="btn btn-xs" type="submit" title="Вернуть в бэклог">↩</button>
-          </form>
-          <form method="post" action="{{ url_for('todo_delete', todo=t.id) }}" style="display:inline;margin:0">
-            <button class="btn btn-xs danger" type="submit" title="Удалить из архива">✕</button>
-          </form>
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-    {% else %}
-    <div class="empty">Сделанное сегодня появится здесь.</div>
     {% endif %}
   </section>
 </div>

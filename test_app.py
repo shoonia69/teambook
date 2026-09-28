@@ -655,10 +655,15 @@ done_row = dbq("SELECT status, done_date FROM todo_items WHERE id=?",
                (todos["Туду-задача Б"],))[0]
 check("todo: «сделано» помечает выполненным с датой (архив)",
       done_row["status"] == "done" and done_row["done_date"] == datetime.date.today().isoformat())
+# архив — отдельная страница, на todo только кнопка
 r = c.get("/todo")
 h = r.get_data(as_text=True)
-check("todo: страница показывает архив с выполненной задачей",
-      "Архив" in h and "Туду-задача Б" in h)
+check("todo: на странице кнопка архива, без панели",
+      "/todo/archive" in h and "Архив" in h and "Туду-задача Б" not in h)
+r = c.get("/todo/archive")
+h = r.get_data(as_text=True)
+check("todo: архив-страница показывает выполненную задачу",
+      r.status_code == 200 and "Архив задач" in h and "Туду-задача Б" in h)
 # переставить порядок: добавить две и поменять местами
 c.post("/todo/add", data={"title": "Порядок-1"}, follow_redirects=True)
 c.post("/todo/add", data={"title": "Порядок-2"}, follow_redirects=True)

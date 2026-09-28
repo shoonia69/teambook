@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Архив задач · TeamBook{% endblock %}
+{% block content %}
+
+<div class="toolbar">
+  <h2 style="margin:0">🗄 Архив задач</h2>
+  <span class="sub">Выполнено сегодня · {{ archive|length }}</span>
+  <div class="spacer"></div>
+  <a class="btn" href="{{ url_for('todo_page') }}">← Мои задачи</a>
+</div>
+
+{% if archive %}
+<div class="todo-list">
+  {% for t in archive %}
+  <div class="todo-item done">
+    <span class="todo-title"><s>{{ t.title }}</s></span>
+    <div class="todo-actions">
+      <form method="post" action="{{ url_for('todo_backlog', todo=t.id) }}" style="display:inline;margin:0">
+        <button class="btn btn-xs" type="submit" title="Вернуть в бэклог">↩ Вернуть</button>
+      </form>
+      <form method="post" action="{{ url_for('todo_delete', todo=t.id) }}" style="display:inline;margin:0"
+            onsubmit="return confirm('Удалить из архива?')">
+        <button class="btn btn-xs danger" type="submit" title="Удалить из архива">✕</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card"><div class="empty">Сделанное сегодня появится здесь. Выполните задачу на странице «Мои задачи».</div></div>
+{% endif %}
+
+{% endblock %}
