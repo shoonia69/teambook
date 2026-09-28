@@ -11,7 +11,7 @@ import sqlite3
 import secrets
 import shutil
 import tempfile
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from functools import wraps
 
 from flask import (
@@ -1419,7 +1419,7 @@ def _board_ctx(db, month=None, year=None):
         "SELECT id, name FROM employees WHERE active = 1 ORDER BY name COLLATE NOCASE"
     ).fetchall()
 
-# --- гант: только задачи с исполнителем и обеими датами ---
+# --- гант: календарная сетка месяца, задачи по дням ---
     from calendar import monthrange, month_name as _mn
     now = datetime.now()
     month = month or now.month
@@ -1428,56 +1428,60 @@ def _board_ctx(db, month=None, year=None):
     if month < 1: month, year = 12, year - 1
     if month > 12: month, year = 1, year + 1
     ndays = monthrange(year, month)[1]
-    # день недели 1-го числа (понедельник=0) для подсветки выходных
+    # день недели 1-го числа (понедельник=0) для отступа календаря
     first_wd = monthrange(year, month)[0]
     def _iso(y, m, d):
         return f"{y:04d}-{m:02d}-{d:02d}"
-    days = []
-    for d in range(1, ndays + 1):
-        wd = (first_wd + d - 1) % 7
-        days.append({
-            "num": d,
-            "weekend": wd >= 5,
-            "iso": _iso(year, month, d),
-        })
+    mon_start = _iso(year, month, 1)
+    mon_end = _iso(year, month, ndays)
     today_iso = now.strftime("%Y-%m-%d")
 
+    # задачи, попадающие в месяц (только с исполнителем и обеими датами)
     gantt_tasks = [
         t for t in tasks
         if t["employee_id"] and t["start_date"] and t["due_date"]
     ]
-    gantt_tasks.sort(key=lambda t: (t["start_date"], t["id"]))
-    mon_start = _iso(year, month, 1)
-    mon_end = _iso(year, month, ndays)
-    # группировка по сотруднику (только задачи, пересекающие выбранный месяц)
-    by_emp = {}
+    tasks_by_day = {}  # iso -> список задач этого дня
     for t in gantt_tasks:
-        # пропускаем, если задача целиком вне месяца
         if t["due_date"] < mon_start or t["start_date"] > mon_end:
             continue
         ef = max(t["start_date"], mon_start)
         ee = min(t["due_date"], mon_end)
-        off = (datetime.strptime(ef, "%Y-%m-%d") - datetime.strptime(mon_start, "%Y-%m-%d")).days
-        dur = (datetime.strptime(ee, "%Y-%m-%d") - datetime.strptime(ef, "%Y-%m-%d")).days + 1
-        by_emp.setdefault(t["employee_id"], {
-            "name": t["emp_name"] or f"#{t['employee_id']}",
-            "tasks": [],
-        })["tasks"].append({
-            "id": t["id"],
-            "title": t["title"],
-            "start": t["start_date"],
-            "due": t["due_date"],
-            "offset": off,
-            "dur": dur,
-            "overdue": t["due_date"] < today_iso,
+        d = datetime.strptime(ef, "%Y-%m-%d")
+        de = datetime.strptime(ee, "%Y-%m-%d")
+        day = d
+        while day <= de:
+            iso = day.strftime("%Y-%m-%d")
+            tasks_by_day.setdefault(iso, []).append({
+                "id": t["id"],
+                "title": t["title"],
+                "emp": t["emp_name"] or f"#{t['employee_id']}",
+                "overdue": t["due_date"] < today_iso,
+                "start": t["start_date"],
+                "due": t["due_date"],
+            })
+            day += timedelta(days=1)
+
+    # ячейки календаря (None — день вне месяца)
+    cells = [None] * first_wd
+    for d in range(1, ndays + 1):
+        iso = _iso(year, month, d)
+        cells.append({
+            "num": d,
+            "iso": iso,
+            "weekend": (first_wd + d - 1) % 7 >= 5,
+            "today": iso == today_iso,
+            "tasks": tasks_by_day.get(iso, []),
         })
+    while len(cells) % 7 != 0:
+        cells.append(None)
+    weeks = [cells[i:i + 7] for i in range(0, len(cells), 7)]
     return {
         "columns": columns,
         "col_tasks": col_tasks,
         "cols_view": cols_view,
         "employees": employees,
-        "gantt_by_emp": by_emp,
-        "gantt_days": days,
+        "gantt_weeks": weeks,
         "gmonth": month,
         "gyear": year,
         "gmonth_name": _mn[month],

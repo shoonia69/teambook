@@ -215,14 +215,15 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
 
 /* ===================== Канбан и гант ===================== */
 .board-wrap {
-  display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap;
+  display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap;
 }
-.kanban-panel { flex: 1 1 420px; min-width: 380px; }
-.gantt-panel { flex: 1 1 520px; min-width: 460px; }
+.kanban-panel { flex: 1 1 560px; min-width: 380px; width: 100%; }
+.gantt-panel { flex: 1 1 480px; min-width: 380px; width: 100%; }
 
-.kb-row { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 10px; align-items: flex-start; }
+/* столбцы канбана переносятся по ширине, прокрутка всего экрана, а не панели */
+.kb-row { display: flex; flex-wrap: wrap; gap: 12px; padding-bottom: 10px; align-items: flex-start; }
 .kb-col {
-  flex: 0 0 240px; width: 240px; min-height: 140px;
+  flex: 1 1 260px; max-width: 340px; min-width: 250px;
   background: var(--panel); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 10px;
   display: flex; flex-direction: column; gap: 8px;
@@ -268,35 +269,32 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
 .kb-edit-pop input, .kb-edit-pop select, .kb-edit-pop textarea { width: 100%; }
 .kb-edit-pop input { padding: 6px 8px; }
 
-/* Гант */
+/* Гант — календарная сетка месяца */
 .gantt-head { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
-.gantt-scroll { position: relative; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); }
-:root {
-  --gantt-empw: 160px;
-  --gantt-dayw: 26px;
-  --gantt-rowh: 30px;
-  --gantt-headh: 30px;
+.gantt-cal {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--panel); padding: 6px; overflow-x: auto;
 }
-.gantt-table { border-collapse: collapse; }
-.gantt-table th, .gantt-table td {
-  width: var(--gantt-dayw); min-width: var(--gantt-dayw); max-width: var(--gantt-dayw);
-  height: var(--gantt-rowh); border: 1px solid var(--border); text-align: center;
-  font-size: 12px; color: var(--muted); padding: 0;
+.gcal-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.gcal-table th {
+  text-align: center; font-size: 12px; font-weight: 600; color: var(--muted);
+  padding: 6px 2px; border-bottom: 1px solid var(--border);
 }
-.gantt-table thead th { height: var(--gantt-headh); font-weight: 600; background: var(--panel2); }
-.gantt-emp-col { width: var(--gantt-empw) !important; min-width: var(--gantt-empw) !important; max-width: var(--gantt-empw) !important; text-align: left !important; font-weight: 600; color: var(--text) !important; padding: 0 10px !important; position: sticky; left: 0; background: var(--panel2); z-index: 2; }
-.gantt-we { background: rgba(255,255,255,.03); }
-.gantt-today { background: rgba(79,140,255,.18); }
-.gantt-bars {
-  position: absolute; left: 0; top: 0; pointer-events: none; z-index: 5;
-  width: calc(var(--gantt-empw) + var(--gantt-ndays, 31) * var(--gantt-dayw));
-  min-height: 100%;
+.gcal-cell {
+  border: 1px solid var(--border); vertical-align: top;
+  min-height: 96px; height: 110px; padding: 4px 5px;
+  display: flex; flex-direction: column; gap: 2px; overflow: hidden;
 }
-.gantt-bar {
-  position: absolute; height: 22px; margin-top: 4px;
-  background: var(--accent); border-radius: 5px;
-  display: flex; align-items: center; padding: 0 6px; overflow: hidden;
-  white-space: nowrap; color: #04121f; pointer-events: auto;
+.gcal-we { background: rgba(255,255,255,.03); }
+.gcal-today { background: rgba(79,140,255,.14); }
+.gcal-empty { border-color: transparent; background: transparent; }
+.gcal-num { font-size: 12px; color: var(--muted); font-weight: 600; }
+.gcal-today .gcal-num { color: var(--accent); }
+.gcal-task {
+  display: block; font-size: 11px; line-height: 1.25; padding: 1px 4px;
+  background: var(--panel2); border: 1px solid var(--border);
+  border-left: 3px solid var(--accent); border-radius: 3px;
+  color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.gantt-bar-overdue { background: var(--danger); }
-.gantt-bar-label { font-size: 11px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.gcal-task-overdue { border-left-color: var(--danger); color: var(--danger); }
+.gcal-more { font-size: 11px; color: var(--muted); }

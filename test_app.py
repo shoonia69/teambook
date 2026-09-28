@@ -417,8 +417,10 @@ c.post("/board/task/add", data={"title": "Задача Б", "column_id": str(col
 r = c.get(f"/board?month=10&year=2026")
 h = r.get_data(as_text=True)
 check("канбан показывает карточку", "Задача А" in h and "Задача Б" in h)
-check("гант показывает сотрудника и бар", emp_kb["name"] in h and "gantt-bar" in h)
-check("задача без дат на гант не попадает", "gantt-emp-col" in h)  # по коду — без дат не попадают в gantt_by_emp
+check("гант-календарь отрисован (сетка месяца)",
+      "gcal-table" in h and "Пн" in h and "gcal-cell" in h)
+check("в календарной сетке нет задачи без дат",
+      "gcal-table" in h and "Задача Б" not in h.split("gcal-table")[1].split("</table>")[0])
 
 # drag&drop: переместить задачу в другой столбец
 r = c.post(f"/board/task/{tasks[0]['id']}/move", data={"column_id": str(cols[1]["id"])})

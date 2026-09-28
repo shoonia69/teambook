@@ -121,43 +121,42 @@
       <a class="btn small" href="{{ url_for('board', month=gnext[0], year=gnext[1]) }}">мес. →</a>
     </div>
 
-    {% if gantt_by_emp %}
-    <div class="gantt-scroll">
-      <table class="gantt-table">
+    {% if gantt_weeks %}
+    <div class="gantt-cal">
+      <table class="gcal-table">
         <thead>
           <tr>
-            <th class="gantt-emp-col">Сотрудник</th>
-            {% for d in gantt_days %}
-              <th class="{% if d.weekend %}gantt-we{% endif %} {% if d.iso == today_iso %}gantt-today{% endif %}">
-                <span class="gantt-dow">{{ 'Сб' if d.weekend and loop.index % 7 in (6,0) else '' }}</span>{{ d.num }}
-              </th>
-            {% endfor %}
+            <th>Пн</th><th>Вт</th><th>Ср</th><th>Чт</th><th>Пт</th><th>Сб</th><th>Вс</th>
           </tr>
         </thead>
         <tbody>
-          {% for eid, e in gantt_by_emp.items() %}
+          {% for week in gantt_weeks %}
           <tr>
-            <td class="gantt-emp-col">{{ e.name }}</td>
-            {% for d in gantt_days %}
-              <td class="gantt-cell {% if d.weekend %}gantt-we{% endif %} {% if d.iso == today_iso %}gantt-today{% endif %}"></td>
+            {% for d in week %}
+              {% if d %}
+              <td class="gcal-cell {% if d.weekend %}gcal-we{% endif %} {% if d.today %}gcal-today{% endif %}">
+                <span class="gcal-num">{{ d.num }}</span>
+                {% for tst in d.tasks[:4] %}
+                  <span class="gcal-task {% if tst.overdue %}gcal-task-overdue{% endif %}"
+                        title="{{ tst.title }} · {{ tst.emp }} · {{ tst.start }} – {{ tst.due }}">
+                    {{ tst.title }}{% if tst.emp %} ({{ tst.emp }}){% endif %}
+                  </span>
+                {% endfor %}
+                {% if d.tasks|length > 4 %}
+                  <span class="gcal-more">+{{ d.tasks|length - 4 }} ещё</span>
+                {% endif %}
+              </td>
+              {% else %}
+              <td class="gcal-cell gcal-empty"></td>
+              {% endif %}
             {% endfor %}
           </tr>
           {% endfor %}
         </tbody>
       </table>
-
-      <!-- наложение баров поверх сетки -->
-      <div class="gantt-bars" style="--gantt-ndays: {{ gantt_days|length }}">
-        {% for eid, e in gantt_by_emp.items() %}
-          {% set row_i = loop.index0 %}
-          {% for tst in e.tasks %}
-            <div class="gantt-bar {% if tst.overdue %}gantt-bar-overdue{% endif %}"
-                 style="left:calc(var(--gantt-empw) + {{ tst.offset }} * var(--gantt-dayw)); top:calc(var(--gantt-headh) + {{ row_i }} * var(--gantt-rowh)); width:calc({{ tst.dur }} * var(--gantt-dayw) - 2px);"
-                 title="{{ tst.title }} · {{ tst.start }} – {{ tst.due }}">
-              <span class="gantt-bar-label">{{ tst.title }}</span>
-            </div>
-          {% endfor %}
-        {% endfor %}
+      <div class="sub" style="margin-top:8px">
+        <span style="color:var(--danger)">■</span> просрочено ·
+        у задачи с исполнителем и датами
       </div>
     </div>
     {% else %}
