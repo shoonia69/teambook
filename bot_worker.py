@@ -172,6 +172,21 @@ def add_task(title, column_id, desc=""):
     return tid
 
 
+def add_todo(title):
+    """Добавить задачу в личный todo руководителя (в бэклог)."""
+    c = db()
+    row = c.execute(
+        "SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM todo_items WHERE status='backlog'"
+    ).fetchone()
+    cur = c.execute(
+        "INSERT INTO todo_items (title, status, sort_order) VALUES (?, 'backlog', ?)",
+        (title, row["n"]))
+    c.commit()
+    tid = cur.lastrowid
+    c.close()
+    return tid
+
+
 def task_by_id(tid):
     c = db()
     row = c.execute("SELECT * FROM kb_tasks WHERE id=? AND deleted_at=''", (tid,)).fetchone()
@@ -195,6 +210,9 @@ def main_kb():
         InlineKeyboardButton("🛠 Проблемы", callback_data="probs"),
     ], [
         InlineKeyboardButton("📋 Канбан-доска", callback_data="board"),
+        InlineKeyboardButton("📝 Мои задачи (todo)", callback_data="todo"),
+    ], [
+        InlineKeyboardButton("➕ Задача в todo", callback_data="todo_add"),
         InlineKeyboardButton("❓ Помощь", callback_data="help"),
     ]])
 
@@ -284,6 +302,17 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _, tid, cid = data.split(":")
         move_task(int(tid), int(cid))
         await show_board(q)
+        return
+
+    if data == "todo":
+        await show_todo(q)
+        return
+    if data == "todo_add":
+        PENDING[f"todoadd:{update.effective_user.id}"] = True
+        await q.edit_message_text(
+            "✍️ Введите задачу для личного todo (упадёт в 📥 Бэклог).\n"
+            "(/cancel для отмены)",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("← Главное меню", callback_data="help")]]))
         return
 
 
@@ -407,6 +436,49 @@ async def show_move_targets(q, tid):
         f"Переместить «{t['title']}»\nВыберите столбец:", reply_markup=InlineKeyboardMarkup(kbd))
 
 
+# личный todo руководителя
+def todo_data():
+    from datetime import date
+    today_s = date.today().isoformat()
+    c = db()
+    c.execute(
+        "UPDATE todo_items SET status='backlog', assigned_date='' "
+        "WHERE status='today' AND assigned_date != '' AND assigned_date != ?", (today_s,))
+    c.execute("DELETE FROM todo_items WHERE status='done' AND done_date != ?", (today_s,))
+    c.commit()
+    backlog = [dict(r) for r in c.execute(
+        "SELECT * FROM todo_items WHERE status='backlog' ORDER BY sort_order, id").fetchall()]
+    today = [dict(r) for r in c.execute(
+        "SELECT * FROM todo_items WHERE status='today' ORDER BY sort_order, id").fetchall()]
+    done = [dict(r) for r in c.execute(
+        "SELECT * FROM todo_items WHERE status='done' AND done_date=? ORDER BY id DESC",
+        (today_s,)).fetchall()]
+    c.close()
+    return backlog, today, done
+
+
+async def show_todo(q):
+    backlog, today, done = todo_data()
+
+    def _lines(label, items, symbol):
+        out = [f"{label} ({len(items)})"]
+        if not items:
+            out.append("   (пусто)")
+        for i, t in enumerate(items, 1):
+            out.append(f"   {symbol} {t['title']}")
+        return out
+
+    text = "📝 Мои задачи (личный todo)\n\n"
+    text += "\n".join(_lines("☀️ На сегодня", today, "✓"))
+    text += "\n\n" + "\n".join(_lines("📥 Бэклог", backlog, "•"))
+    text += "\n\n" + "\n".join(_lines("🗄 Архив (выполнено сегодня)", done, "—"))
+    kbd = [[
+        InlineKeyboardButton("➕ Задача в todo", callback_data="todo_add"),
+        InlineKeyboardButton("← Главное меню", callback_data="help"),
+    ]]
+    await q.edit_message_text(text[:4000], reply_markup=InlineKeyboardMarkup(kbd))
+
+
 # --------------------------------------------------------------------------- #
 # Текстовые сообщения (перехват ожидаемого ввода)
 # --------------------------------------------------------------------------- #
@@ -419,7 +491,15 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text == "/cancel":
         PENDING.pop(f"probadd:{uid}", None)
         PENDING.pop(f"newtask:{uid}", None)
+        PENDING.pop(f"todoadd:{uid}", None)
         await update.message.reply_text("Отменено.", reply_markup=main_kb())
+        return
+
+    if f"todoadd:{uid}" in PENDING:
+        PENDING.pop(f"todoadd:{uid}")
+        tid = add_todo(text)
+        await update.message.reply_text(f"✅ Задача #{tid} добавлена в бэклог todo.",
+                                        reply_markup=main_kb())
         return
 
     if f"probadd:{uid}" in PENDING:

@@ -198,6 +198,7 @@ CREATE TABLE IF NOT EXISTS todo_items (
     status        TEXT NOT NULL DEFAULT 'backlog',
     sort_order    INTEGER NOT NULL DEFAULT 0,
     assigned_date TEXT DEFAULT '',
+    done_date     TEXT DEFAULT '',
     created_at    TEXT DEFAULT (datetime('now'))
 );
 """
@@ -237,6 +238,11 @@ def init_db():
     # таблицы (meetings, year_records) -> employees_old, которые после DROP битые.
     _repair_dangling_fk(db, "meetings", "employee_id")
     _repair_dangling_fk(db, "year_records", "employee_id")
+
+    # миграция todo: колонка done_date (для архива выполненных сегодня)
+    todo_cols = {r[1] for r in db.execute("PRAGMA table_info(todo_items)").fetchall()}
+    if "done_date" not in todo_cols:
+        db.execute("ALTER TABLE todo_items ADD COLUMN done_date TEXT DEFAULT ''")
 
     # Миграция канбана: колонки архива/корзины + many-to-many исполнители.
     kb_cols = {r[1] for r in db.execute("PRAGMA table_info(kb_tasks)").fetchall()}
@@ -2091,6 +2097,8 @@ def todo_page():
         "UPDATE todo_items SET status='backlog', assigned_date='' "
         "WHERE status='today' AND assigned_date != '' AND assigned_date != ?",
         (today_s,))
+    # архив — только задачи, выполненные сегодня; старьё из него удаляем
+    db.execute("DELETE FROM todo_items WHERE status='done' AND done_date != ?", (today_s,))
     db.commit()
     backlog = db.execute(
         "SELECT * FROM todo_items WHERE status='backlog' ORDER BY sort_order, id"
@@ -2098,7 +2106,11 @@ def todo_page():
     today = db.execute(
         "SELECT * FROM todo_items WHERE status='today' ORDER BY sort_order, id"
     ).fetchall()
-    return render_template("todo.html", backlog=backlog, today=today)
+    archive = db.execute(
+        "SELECT * FROM todo_items WHERE status='done' AND done_date=? "
+        "ORDER BY id DESC", (today_s,)
+    ).fetchall()
+    return render_template("todo.html", backlog=backlog, today=today, archive=archive)
 
 
 @app.route("/todo/add", methods=["POST"])
@@ -2153,9 +2165,11 @@ def todo_backlog(todo):
 @login_required
 def todo_done(todo):
     db = get_db()
-    db.execute("DELETE FROM todo_items WHERE id=?", (todo,))
+    db.execute(
+        "UPDATE todo_items SET status='done', done_date=? WHERE id=?",
+        (date.today().isoformat(), todo))
     db.commit()
-    flash("Сделано ✓", "ok")
+    flash("Сделано ✓ — в архиве", "ok")
     return redirect(url_for("todo_page"))
 
 

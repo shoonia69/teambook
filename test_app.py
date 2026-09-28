@@ -649,10 +649,16 @@ kb = dbq("SELECT * FROM kb_tasks WHERE title='Туду-задача А'")
 first = dbq("SELECT id FROM kb_columns WHERE kind='kanban' ORDER BY sort_order, id LIMIT 1")[0]["id"]
 check("todo: делегирование убирает из todo и создаёт на канбане",
       len(left) == 0 and len(kb) == 1 and kb[0]["column_id"] == first)
-# пометить Б сделанным (удалить)
+# пометить Б сделанным (попадает в архив за сегодня, не удаляется)
 c.post(f"/todo/{todos['Туду-задача Б']}/done", follow_redirects=True)
-check("todo: «сделано» удаляет задачу",
-      len(dbq("SELECT 1 FROM todo_items WHERE id=?", (todos["Туду-задача Б"],))) == 0)
+done_row = dbq("SELECT status, done_date FROM todo_items WHERE id=?",
+               (todos["Туду-задача Б"],))[0]
+check("todo: «сделано» помечает выполненным с датой (архив)",
+      done_row["status"] == "done" and done_row["done_date"] == datetime.date.today().isoformat())
+r = c.get("/todo")
+h = r.get_data(as_text=True)
+check("todo: страница показывает архив с выполненной задачей",
+      "Архив" in h and "Туду-задача Б" in h)
 # переставить порядок: добавить две и поменять местами
 c.post("/todo/add", data={"title": "Порядок-1"}, follow_redirects=True)
 c.post("/todo/add", data={"title": "Порядок-2"}, follow_redirects=True)

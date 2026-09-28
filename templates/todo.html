@@ -7,41 +7,10 @@
   <span class="sub" style="font-size:13px">
     Бэклог → «на сегодня». Несделанное на завтра вернётся в бэклог автоматически.
   </span>
-  <div class="spacer"></div>
-  <a class="btn" href="{{ url_for('index') }}">← К сотрудникам</a>
 </div>
 
 <div class="todo-wrap">
-  <!-- СЕГОДНЯ -->
-  <section class="todo-panel">
-    <div class="panel-title">☀️ На сегодня · {{ today|length }}</div>
-    {% if today %}
-    <div class="todo-list">
-      {% for t in today %}
-      <div class="todo-item">
-        <span class="todo-title">{{ t.title }}</span>
-        <div class="todo-actions">
-          <form method="post" action="{{ url_for('todo_done', todo=t.id) }}" style="display:inline;margin:0">
-            <button class="btn btn-xs primary" type="submit" title="Сделано">✓</button>
-          </form>
-          <form method="post" action="{{ url_for('todo_backlog', todo=t.id) }}" style="display:inline;margin:0">
-            <button class="btn btn-xs" type="submit" title="Вернуть в бэклог">↩</button>
-          </form>
-          <form method="post" action="{{ url_for('todo_delegate', todo=t.id) }}" style="display:inline;margin:0">
-            <button class="btn btn-xs" type="submit" title="Делегировать в канбан">→ канбан</button>
-          </form>
-        </div>
-      </div>
-      {% else %}
-      <div class="kb-empty">пусто</div>
-      {% endfor %}
-    </div>
-    {% else %}
-    <div class="empty">Сегодня свободно. Возьмите задачи из бэклога.</div>
-    {% endif %}
-  </section>
-
-  <!-- БЭКЛОГ -->
+  <!-- БЭКЛОГ (слева) -->
   <section class="todo-panel">
     <div class="panel-title">📥 Бэклог · {{ backlog|length }}</div>
     <form method="post" action="{{ url_for('todo_add') }}" class="todo-add-row">
@@ -75,6 +44,59 @@
     </div>
     {% else %}
     <div class="empty">Бэклог пуст. Добавьте задачи выше.</div>
+    {% endif %}
+  </section>
+
+  <!-- СЕГОДНЯ (справа) -->
+  <section class="todo-panel">
+    <div class="panel-title">☀️ На сегодня · {{ today|length }}</div>
+    {% if today %}
+    <div class="todo-list">
+      {% for t in today %}
+      <div class="todo-item">
+        <span class="todo-title">{{ t.title }}</span>
+        <div class="todo-actions">
+          <form method="post" action="{{ url_for('todo_done', todo=t.id) }}" style="display:inline;margin:0">
+            <button class="btn btn-xs primary" type="submit" title="Сделано">✓</button>
+          </form>
+          <form method="post" action="{{ url_for('todo_backlog', todo=t.id) }}" style="display:inline;margin:0">
+            <button class="btn btn-xs" type="submit" title="Вернуть в бэклог">↩</button>
+          </form>
+          <form method="post" action="{{ url_for('todo_delegate', todo=t.id) }}" style="display:inline;margin:0">
+            <button class="btn btn-xs" type="submit" title="Делегировать в канбан">→ канбан</button>
+          </form>
+        </div>
+      </div>
+      {% else %}
+      <div class="kb-empty">пусто</div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty">Сегодня свободно. Возьмите задачи из бэклога.</div>
+    {% endif %}
+  </section>
+
+  <!-- АРХИВ: выполненные сегодня -->
+  <section class="todo-panel">
+    <div class="panel-title">🗄 Архив (выполнено сегодня) · {{ archive|length }}</div>
+    {% if archive %}
+    <div class="todo-list">
+      {% for t in archive %}
+      <div class="todo-item done">
+        <span class="todo-title"><s>{{ t.title }}</s></span>
+        <div class="todo-actions">
+          <form method="post" action="{{ url_for('todo_backlog', todo=t.id) }}" style="display:inline;margin:0">
+            <button class="btn btn-xs" type="submit" title="Вернуть в бэклог">↩</button>
+          </form>
+          <form method="post" action="{{ url_for('todo_delete', todo=t.id) }}" style="display:inline;margin:0">
+            <button class="btn btn-xs danger" type="submit" title="Удалить из архива">✕</button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty">Сделанное сегодня появится здесь.</div>
     {% endif %}
   </section>
 </div>
