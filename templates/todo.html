@@ -9,9 +9,21 @@
   </span>
   <div class="spacer"></div>
   <a class="btn" href="{{ url_for('todo_archive') }}">🗄 Архив ({{ archive|length }})</a>
-</div>
+  </div>
 
-<div class="todo-wrap" style="flex-direction:column">
+  <!-- поиск и фильтр по тегу — самый верх страницы -->
+  <div class="todo-filterbar">
+      <input type="text" id="todoSearch" placeholder="Поиск / (клавиша «/»)" oninput="todoApplyFilter()">
+      {% if all_tags %}
+      <select id="todoTagFilter" onchange="todoApplyFilter()">
+        <option value="">Все теги</option>
+        {% for tg in all_tags %}<option value="{{ tg }}">{{ tg }}</option>{% endfor %}
+      </select>
+      <button class="btn btn-xs" type="button" title="Сбросить фильтры" onclick="document.getElementById('todoSearch').value='';document.getElementById('todoTagFilter').value='';todoApplyFilter();">✕</button>
+      {% endif %}
+    </div>
+
+  <div class="todo-wrap" style="flex-direction:column">
 
   <!-- БЭКЛОГ (вход для новых) -->
   <section class="todo-panel" style="flex:1 1 auto;width:100%">
@@ -60,16 +72,7 @@
     {% endif %}
   </section>
 
-  <div class="todo-filterbar">
-      <input type="text" id="todoSearch" placeholder="Поиск / (клавиша «/»)" oninput="todoApplyFilter()">
-      {% if all_tags %}
-      <select id="todoTagFilter" onchange="todoApplyFilter()">
-        <option value="">Все теги</option>
-        {% for tg in all_tags %}<option value="{{ tg }}">{{ tg }}</option>{% endfor %}
-      </select>
-      <button class="btn btn-xs" type="button" title="Сбросить фильтры" onclick="document.getElementById('todoSearch').value='';document.getElementById('todoTagFilter').value='';todoApplyFilter();">✕</button>
-      {% endif %}
-    </div>
+
 
       <!-- МАТРИЦА 2×2: важно × срочно -->
       <div class="eisen-row">
