@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}Эйзенхауэр · TeamBook{% endblock %}
+{% block content %}
+
+<div class="toolbar">
+  <h2 style="margin:0">Матрица Эйзенхауэра</h2>
+  <span class="sub">· важность × срочность · задачи с канбана, переносимые в квадранты</span>
+  <div class="spacer"></div>
+  <a class="btn" href="{{ url_for('board') }}">← К доске</a>
+</div>
+
+<div class="emi-grid">
+  {% for q in quads %}
+    {% set tasks = quad_tasks.get(q.id, []) %}
+    <div class="emi-quad emi-{{ q.kind }}"
+         ondragover="event.preventDefault(); this.classList.add('drag-over')"
+         ondragleave="this.classList.remove('drag-over')"
+         ondrop="dropEmi(event, {{ q.id }})">
+      <div class="emi-head">{{ q.name }} <span class="kb-count">{{ tasks|length }}</span></div>
+      <div class="emi-cards">
+        {% for t in tasks %}
+          <div class="kb-card" draggable="true"
+               ondragstart="dragTask(event)"
+               onclick="openCard({{ t.id }})"
+               data-id="{{ t.id }}" title="Клик — открыть">
+            <div class="kb-card-title">{{ t.title }}</div>
+            {% if t.description %}<div class="kb-card-desc">{{ t.description }}</div>{% endif %}
+            <div class="kb-card-meta">
+              {% set who = members.get(t.id, []) %}
+              {% if who %}<span class="emp" title="Исполнители">👤 {{ who | join(', ') }}</span>{% endif %}
+              {% if t.start_date or t.due_date %}
+                <span class="dates" title="Сроки">📅 {% if t.start_date %}{{ t.start_date[5:] }}{% endif %}–{% if t.due_date %}{{ t.due_date[5:] }}{% endif %}</span>
+              {% endif %}
+            </div>
+          </div>
+        {% else %}
+          <div class="kb-empty">—</div>
+        {% endfor %}
+      </div>
+      <form method="post" action="{{ url_for('board_task_add') }}" class="kb-add-task">
+        <input type="hidden" name="column_id" value="{{ q.id }}">
+        <input type="text" name="title" placeholder="+ задача... (в Бэклог)" required>
+        <button class="btn small" type="submit">+</button>
+      </form>
+    </div>
+  {% endfor %}
+</div>
+
+<div class="kb-zones">
+  <div class="kb-zone" data-zone="archive"
+       ondragover="event.preventDefault(); this.classList.add('drag-over')"
+       ondragleave="this.classList.remove('drag-over')"
+       ondrop="dropEmiZone(event, 'archive')">
+    <span class="kb-zone-ico">🗄</span>
+    <span class="kb-zone-label">Архив</span>
+  </div>
+  <div class="kb-zone danger-zone" data-zone="trash"
+       ondragover="event.preventDefault(); this.classList.add('drag-over')"
+       ondragleave="this.classList.remove('drag-over')"
+       ondrop="dropEmiZone(event, 'trash')">
+    <span class="kb-zone-ico">🗑</span>
+    <span class="kb-zone-label">Корзина</span>
+  </div>
+</div>
+
+<!-- модалка карточки -->
+<div class="modal-overlay" id="card-modal" onclick="if(event.target===this)closeCard();">
+  <div class="modal-card">
+    <div class="modal-head">
+      <span id="card-modal-title"></span>
+      <button class="modal-x" onclick="closeCard()" title="Закрыть">✕</button>
+    </div>
+    <div class="modal-body" id="card-modal-body"></div>
+  </div>
+</div>
+
+<script>
+let draggedId = null;
+function dragTask(ev) {
+  draggedId = ev.currentTarget.dataset.id;
+  ev.dataTransfer.effectAllowed = 'move';
+  ev.dataTransfer.setData('text/plain', ev.currentTarget.dataset.id);
+  const ghost = ev.currentTarget.cloneNode(true);
+  ghost.classList.add('kb-drag-ghost');
+  ghost.style.position = 'fixed'; ghost.style.top = '-1000px'; ghost.style.left = '-1000px';
+  ghost.style.width = '220px';
+  ghost.querySelectorAll('input, button').forEach(function (el) { el.remove(); });
+  document.body.appendChild(ghost);
+  ev.dataTransfer.setDragImage(ghost, 30, 20);
+  requestAnimationFrame(function () { setTimeout(function () { ghost.remove(); }, 0); });
+}
+function dropEmi(ev, colId) {
+  ev.preventDefault();
+  ev.currentTarget.classList.remove('drag-over');
+  if (!draggedId) return;
+  var fd = new FormData();
+  fd.append('column_id', colId);
+  fetch('/board/task/' + encodeURIComponent(draggedId) + '/move', { method: 'POST', body: fd })
+    .then(function () { location.reload(); });
+  draggedId = null;
+}
+function dropEmiZone(ev, zone) {
+  ev.preventDefault();
+  ev.currentTarget.classList.remove('drag-over');
+  if (!draggedId) return;
+  var id = encodeURIComponent(draggedId);
+  var url = zone === 'archive' ? '/board/task/' + id + '/archive' : '/board/task/' + id + '/trash';
+  fetch(url, { method: 'POST' }).then(function () { location.reload(); });
+  draggedId = null;
+}
+function openCard(id) {
+  fetch('/board/task/' + encodeURIComponent(id) + '/card')
+    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
+    .then(function (html) {
+      document.getElementById('card-modal-body').innerHTML = html;
+      document.getElementById('card-modal').style.display = 'flex';
+    })
+    .catch(function () { alert('Не удалось открыть карточку'); });
+}
+function closeCard() {
+  document.getElementById('card-modal').style.display = 'none';
+  document.getElementById('card-modal-body').innerHTML = '';
+}
+/* Живой поиск исполнителя (инлайн-скрипт фрагмента модалки не выполняется) */
+function tmFilterEmployees(inp) {
+  var q = inp.value.trim().toLowerCase();
+  var labels = document.querySelectorAll('#tm-employee-list .tm-emp');
+  var shown = 0;
+  labels.forEach(function (l) {
+    var hit = !q || (l.dataset.name ? l.dataset.name.indexOf(q) !== -1 : false);
+    l.style.display = hit ? '' : 'none';
+    if (hit) shown++;
+  });
+  var none = document.getElementById('tm-no-match');
+  if (none) none.style.display = shown ? 'none' : '';
+}
+</script>
+
+{% endblock %}

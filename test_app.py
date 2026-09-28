@@ -386,37 +386,46 @@ c.post("/login", data={"password": "test-pass-123"}, follow_redirects=True)
 # страница доступна (до создания столбцов — пустая доска)
 r = c.get("/board")
 check("доска открывается", r.status_code == 200 and "Канбан" in r.get_data(as_text=True))
-# создать столбцы
+# создать обычные (несистемные) столбцы
 c.post("/board/column/add", data={"name": "В работе"}, follow_redirects=True)
 c.post("/board/column/add", data={"name": "Готово"}, follow_redirects=True)
-cols = dbq("SELECT id, name, sort_order FROM kb_columns ORDER BY sort_order")
-check("два столбца созданы", len(cols) == 2 and cols[0]["name"] == "В работе")
-# переименовать
-c.post(f"/board/column/{cols[1]['id']}/rename", data={"name": "Сделано"}, follow_redirects=True)
+work = dbq("SELECT id, name, kind, locked FROM kb_columns WHERE name='В работе'")[0]
+done = dbq("SELECT id, name, kind, locked FROM kb_columns WHERE name='Готово'")[0]
+backlog = dbq("SELECT id, name, kind, locked FROM kb_columns WHERE kind='kanban' AND locked=1")[0]
+check("системный Бэклог создан и заблокирован", backlog["name"] == "📥 Бэклог" and backlog["locked"] == 1)
+check("два обычных столбца созданы", work["name"] == "В работе" and done["name"] == "Готово")
+# переименовать обычный столбец
+c.post(f"/board/column/{done['id']}/rename", data={"name": "Сделано"}, follow_redirects=True)
 check("столбец переименован",
-      len(dbq("SELECT * FROM kb_columns WHERE id=? AND name='Сделано'", (cols[1]["id"],))) == 1)
+      len(dbq("SELECT * FROM kb_columns WHERE id=? AND name='Сделано'", (done["id"],))) == 1)
+# переименовать системный (Бэклог) запрещено
+c.post(f"/board/column/{backlog['id']}/rename", data={"name": "Xxx"}, follow_redirects=True)
+check("системный Бэклог нельзя переименовать",
+      len(dbq("SELECT * FROM kb_columns WHERE id=? AND name='📥 Бэклог'", (backlog["id"],))) == 1)
 
-# создать задачу в первом столбце с двумя сотрудниками и датами
+# создать задачу с двумя сотрудниками и датами — она должна попасть в Бэклог
 emp_kb = dbq("SELECT id, name FROM employees WHERE active=1 LIMIT 1")[0]
 emp_kb2 = dbq("SELECT id, name FROM employees WHERE active=1 AND id!=? LIMIT 1",
               (emp_kb["id"],))[0]
 c.post("/board/task/add", data={
-    "title": "Задача А", "column_id": str(cols[0]["id"]),
+    "title": "Задача А",
     "employee_id": [str(emp_kb["id"]), str(emp_kb2["id"])],
     "start_date": "2026-10-01", "due_date": "2026-10-10",
     "description": "описание А",
 }, follow_redirects=True)
 tasks = dbq("SELECT * FROM kb_tasks WHERE title='Задача А'")
 mem = dbq("SELECT employee_id FROM kb_task_members WHERE task_id=?", (tasks[0]["id"],))
+check("новая задача упала в Бэклог",
+      len(tasks) == 1 and tasks[0]["column_id"] == backlog["id"])
 check("задача создана с датами и двумя исполнителями",
-      len(tasks) == 1 and tasks[0]["start_date"] == "2026-10-01"
-      and tasks[0]["due_date"] == "2026-10-10"
+      tasks[0]["start_date"] == "2026-10-01" and tasks[0]["due_date"] == "2026-10-10"
       and sorted(m["employee_id"] for m in mem) == sorted([emp_kb["id"], emp_kb2["id"]]))
 
-# добавить задачу без исполнителя/дат (только на канбане)
-c.post("/board/task/add", data={"title": "Задача Б", "column_id": str(cols[0]["id"])},
-       follow_redirects=True)
+# добавить задачу без исполнителя/дат
+c.post("/board/task/add", data={"title": "Задача Б"}, follow_redirects=True)
 taskB = dbq("SELECT id FROM kb_tasks WHERE title='Задача Б'")[0]
+check("вторая новая задача тоже в Бэклоге",
+      dbq("SELECT column_id FROM kb_tasks WHERE id=?", (taskB["id"],))[0]["column_id"] == backlog["id"])
 
 # страница рендерит карточки и гант-элементы
 r = c.get(f"/board?month=10&year=2026")
@@ -447,15 +456,27 @@ check("в модалке отмечены оба исполнителя",
 # поиск-фильтр присутствует
 check("в модалке есть поле поиска исполнителя", "tm-employee-search" in hm)
 
-# drag&drop: переместить задачу в другой столбец
-r = c.post(f"/board/task/{tasks[0]['id']}/move", data={"column_id": str(cols[1]["id"])})
+# drag&drop: переместить задачу из Бэклога в обычный столбец
+r = c.post(f"/board/task/{tasks[0]['id']}/move", data={"column_id": str(work["id"])})
 check("перемещение задачи меняет столбец",
       r.status_code == 204 and dbq("SELECT column_id FROM kb_tasks WHERE id=?",
-                                   (tasks[0]["id"],))[0]["column_id"] == cols[1]["id"])
+                                   (tasks[0]["id"],))[0]["column_id"] == work["id"])
+
+# drag&drop: задача из канбана в квадрант Эйзенхауэра
+emi1 = dbq("SELECT id, kind FROM kb_columns WHERE kind='emi1'")[0]
+r = c.post(f"/board/task/{tasks[0]['id']}/move", data={"column_id": str(emi1["id"])})
+check("перенос в квадрант Эйзенхауэра меняет столбец",
+      r.status_code == 204 and dbq("SELECT column_id FROM kb_tasks WHERE id=?",
+                                   (tasks[0]["id"],))[0]["column_id"] == emi1["id"])
+r = c.get("/eisenhower")
+eh = r.get_data(as_text=True)
+check("страница Эйзенхауэра открывается", r.status_code == 200
+      and "Матрица" in eh and "Срочно и важно" in eh)
+check("задача из канбана попала в квадрант", "Задача А" in eh)
 
 # редактирование задачи: сменить исполнителей на одного
 r = c.post(f"/board/task/{tasks[0]['id']}/edit", data={
-    "title": "Задача А (ред)", "column_id": str(cols[0]["id"]),
+    "title": "Задача А (ред)", "column_id": str(backlog["id"]),
     "employee_id": [str(emp_kb2["id"])],
     "start_date": "2026-11-02", "due_date": "2026-11-05", "description": "обновлено",
 }, follow_redirects=True)
@@ -465,10 +486,15 @@ check("задача отредактирована, исполнитель од�
               (tasks[0]["id"],))) == 1
       and [m["employee_id"] for m in mem] == [emp_kb2["id"]])
 
-# удаление столбца с задачами запрещено
-r = c.post(f"/board/column/{cols[0]['id']}/delete", follow_redirects=True)
+# удаление столбца с задачами запрещено (обычный столбец с задачей)
+c.post(f"/board/task/{tasks[0]['id']}/move", data={"column_id": str(work["id"])})
+r = c.post(f"/board/column/{work['id']}/delete", follow_redirects=True)
 check("столбец с задачами не удаляется",
-      len(dbq("SELECT * FROM kb_columns WHERE id=?", (cols[0]["id"],))) == 1)
+      len(dbq("SELECT * FROM kb_columns WHERE id=?", (work["id"],))) == 1)
+# системный квадрант/Бэклог нельзя удалить даже пустой
+r = c.post(f"/board/column/{backlog['id']}/delete", follow_redirects=True)
+check("Бэклог нельзя удалить (системный)",
+      len(dbq("SELECT * FROM kb_columns WHERE id=?", (backlog["id"],))) == 1)
 # «удаление» = в корзину (soft delete), задача исчезает с доски но остаётся в БД
 r1 = c.post(f"/board/task/{taskB['id']}/trash")
 r2 = c.post(f"/board/task/{tasks[0]['id']}/trash")
@@ -510,10 +536,11 @@ check("очистка корзины",
       len(dbq("SELECT * FROM kb_tasks WHERE id=?", (tasks[0]["id"],))) == 0)
 # задача Б после restore снова активна — уводим её в корзину, чтобы столбец стал пустым
 c.post(f"/board/task/{taskB['id']}/trash")
-# пустой столбец удаляется
-c.post(f"/board/column/{cols[0]['id']}/delete", follow_redirects=True)
+c.post(f"/board/task/{tasks[0]['id']}/trash")
+# пустой обычный столбец удаляется
+c.post(f"/board/column/{work['id']}/delete", follow_redirects=True)
 check("пустой столбец удалён",
-      len(dbq("SELECT * FROM kb_columns WHERE id=?", (cols[0]["id"],))) == 0)
+      len(dbq("SELECT * FROM kb_columns WHERE id=?", (work["id"],))) == 0)
 
 print()
 if failures:

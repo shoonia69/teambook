@@ -13,30 +13,34 @@
   <!-- ===================== КАНБАН ===================== -->
   <section class="kanban-panel">
     <div class="panel-title">Канбан</div>
-    <div class="kb-add-col">
-      <form method="post" action="{{ url_for('board_column_add') }}" style="display:flex;gap:8px;flex-wrap:wrap">
+    <div class="kb-add-row" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <form method="post" action="{{ url_for('board_column_add') }}" style="display:flex;gap:8px">
         <input type="text" name="name" placeholder="Новый столбец..." required>
-        <button class="btn small primary" type="submit">+ Столбец</button>
+        <button class="btn small" type="submit">+ Столбец</button>
+      </form>
+      <form method="post" action="{{ url_for('board_task_add') }}" style="display:flex;gap:8px;flex:1;min-width:220px">
+        <input type="text" name="title" placeholder="+ задача (упадёт в 📥 Бэклог)..." required style="flex:1">
+        <button class="btn small primary" type="submit">+</button>
       </form>
     </div>
 
     <div class="kb-row">
-      <!-- столбцы (создаваемые руководителем) -->
+      <!-- столбцы (создаваемые руководителем; Бэклог и квадранты — системные) -->
       {% for col in cols_view %}
         {% set tasks = col_tasks.get(col.id if col else None, []) %}
-        {% if col or tasks %}
-        <div class="kb-col" data-colid="{{ col.id if col else '' }}"
+        {% if col %}
+        <div class="kb-col" data-colid="{{ col.id }}"
              ondragover="event.preventDefault(); this.classList.add('drag-over')"
              ondragleave="this.classList.remove('drag-over')"
-             ondrop="dropTask(event, {{ col.id if col else 'null' }})">
+             ondrop="dropTask(event, {{ col.id }})">
           <div class="kb-col-head">
-            <span class="kb-col-name">{{ col.name if col else 'Без столбца' }}</span>
+            <span class="kb-col-name">{{ col.name }}</span>
             <span class="kb-count">{{ tasks|length }}</span>
-            {% if col %}
+            {% if not col.locked %}
             <span class="kb-col-actions">
               <form method="post" action="{{ url_for('board_column_rename', cid=col.id) }}" style="display:inline;margin:0">
                 <input type="text" name="name" value="{{ col.name }}" placeholder="Переименовать"
-                       title="Переименовать столбец" style="width:120px">
+                       title="Переименовать столбец" style="width:110px">
               </form>
               <form method="post" action="{{ url_for('board_column_delete', cid=col.id) }}" style="display:inline;margin:0"
                     onsubmit="return confirm('Удалить столбец? Задачи из него останутся без столбца.')">
@@ -68,12 +72,6 @@
             <div class="kb-empty">—</div>
             {% endfor %}
           </div>
-
-          <form method="post" action="{{ url_for('board_task_add') }}" class="kb-add-task">
-            <input type="hidden" name="column_id" value="{{ col.id if col else '' }}">
-            <input type="text" name="title" placeholder="+ задача..." required>
-            <button class="btn small" type="submit">+</button>
-          </form>
         </div>
         {% endif %}
       {% endfor %}

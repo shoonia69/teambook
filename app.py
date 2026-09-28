@@ -151,9 +151,13 @@ CREATE TABLE IF NOT EXISTS problems (
 -- Канбан-доска и гант (задачи и сроки)
 
 -- Столбцы канбана (свободные, создаются руководителем)
+-- kind: 'kanban' = обычный/Бэклог, 'emiN' = квадрант Эйзенхауэра (N = индекс 1..4)
+-- locked=1 = системный (Бэклог и квадранты: нельзя удалить/переименовать)
 CREATE TABLE IF NOT EXISTS kb_columns (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     name        TEXT NOT NULL,
+    kind        TEXT NOT NULL DEFAULT 'kanban',
+    locked      INTEGER NOT NULL DEFAULT 0,
     sort_order  INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT DEFAULT (datetime('now'))
 );
@@ -241,6 +245,35 @@ def init_db():
             db.execute("ALTER TABLE kb_tasks DROP COLUMN employee_id")
         except Exception:
             pass
+
+    # --- Эйзенхауэр: системные столбцы (Бэклог + 4 квадранта) ---
+    kcols = {r[1] for r in db.execute("PRAGMA table_info(kb_columns)").fetchall()}
+    if "kind" not in kcols:
+        db.execute("ALTER TABLE kb_columns ADD COLUMN kind TEXT NOT NULL DEFAULT 'kanban'")
+    if "locked" not in kcols:
+        db.execute("ALTER TABLE kb_columns ADD COLUMN locked INTEGER NOT NULL DEFAULT 0")
+
+    def _ensure_sys_column(kind, name, sort_order):
+        row = db.execute("SELECT id FROM kb_columns WHERE kind=? LIMIT 1", (kind,)).fetchone()
+        if row:
+            # зафиксируем порядок и статус системного столбца
+            db.execute("UPDATE kb_columns SET locked=1, name=?, sort_order=? WHERE id=?",
+                       (name, sort_order, row["id"]))
+            return row["id"]
+        cur = db.execute(
+            "INSERT INTO kb_columns (name, kind, locked, sort_order) VALUES (?,?,1,?)",
+            (name, kind, sort_order))
+        return cur.lastrowid
+
+    backlog_id = _ensure_sys_column("kanban", "📥 Бэклог", -100)
+    _ensure_sys_column("emi1", "Срочно и важно", 1)
+    _ensure_sys_column("emi2", "Важно, не срочно", 2)
+    _ensure_sys_column("emi3", "Срочно, не важно", 3)
+    _ensure_sys_column("emi4", "Не важно, не срочно", 4)
+
+    # задачи без столбца (например, из старой схемы) -> в Бэклог
+    db.execute("UPDATE kb_tasks SET column_id=? WHERE column_id IS NULL",
+               (backlog_id,))
 
     db.commit()
     db.close()
@@ -1449,8 +1482,11 @@ def _board_ctx(db, month=None, year=None):
     # авточистка корзины: раз в месяц удаляем из неё задачи окончательно
     _purge_stale_trash(db)
 
+    # на канбане — только обычные столбцы (kind='kanban', включая Бэклог);
+    # квадранты Эйзенхауэра (kind='emiN') показываются на странице /eisenhower
     columns = db.execute(
-        "SELECT * FROM kb_columns ORDER BY sort_order, id").fetchall()
+        "SELECT * FROM kb_columns WHERE kind='kanban' ORDER BY sort_order, id"
+    ).fetchall()
 
     # только активные задачи (не в архиве и не в корзине)
     tasks = db.execute(
@@ -1460,10 +1496,9 @@ def _board_ctx(db, month=None, year=None):
     members = _task_members_map(db)
 
     col_tasks = {c["id"]: [] for c in columns}
-    col_tasks.setdefault(None, [])
     for t in tasks:
         col_tasks.setdefault(t["column_id"], []).append(t)
-    cols_view = list(columns) + [None]
+    cols_view = list(columns)
 
     employees = db.execute(
         "SELECT id, name FROM employees WHERE active = 1 ORDER BY name COLLATE NOCASE"
@@ -1548,6 +1583,32 @@ def _board_ctx(db, month=None, year=None):
     }
 
 
+def _eisenhower_ctx(db):
+    """Контекст Эйзенхауэра: 4 квадранта (kind='emi1'..'emi4') с задачами."""
+    _purge_stale_trash(db)
+    quads = db.execute(
+        "SELECT * FROM kb_columns WHERE kind LIKE 'emi%' ORDER BY sort_order, id"
+    ).fetchall()
+    tasks = db.execute(
+        """SELECT t.* FROM kb_tasks t
+           INNER JOIN kb_columns c ON c.id = t.column_id
+           WHERE t.archived_at = '' AND t.deleted_at = '' AND c.kind LIKE 'emi%'
+           ORDER BY t.id DESC""").fetchall()
+    members = _task_members_map(db)
+    quad_tasks = {q["id"]: [] for q in quads}
+    for t in tasks:
+        quad_tasks.setdefault(t["column_id"], []).append(t)
+    employees = db.execute(
+        "SELECT id, name FROM employees WHERE active = 1 ORDER BY name COLLATE NOCASE"
+    ).fetchall()
+    return {
+        "quads": quads,
+        "quad_tasks": quad_tasks,
+        "employees": employees,
+        "members": members,
+    }
+
+
 def _purge_stale_trash(db):
     """Окончательно удаляет задачи из корзины старше 30 дней (раз в месяц)."""
     month_ago = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
@@ -1572,6 +1633,14 @@ def board():
     return render_template("board.html", **ctx)
 
 
+@app.route("/eisenhower")
+@login_required
+def eisenhower():
+    db = get_db()
+    ctx = _eisenhower_ctx(db)
+    return render_template("eisenhower.html", **ctx)
+
+
 @app.route("/board/column/add", methods=["POST"])
 @login_required
 def board_column_add():
@@ -1593,12 +1662,17 @@ def board_column_add():
 def board_column_rename(cid):
     name = request.form.get("name", "").strip()
     db = get_db()
-    if name and db.execute("SELECT 1 FROM kb_columns WHERE id=?", (cid,)).fetchone():
+    col = db.execute("SELECT * FROM kb_columns WHERE id=?", (cid,)).fetchone()
+    if not col:
+        flash("Столбец не найден", "error")
+    elif col["locked"]:
+        flash("Системный столбец нельзя переименовать", "error")
+    elif not name:
+        flash("Пустое имя", "error")
+    else:
         db.execute("UPDATE kb_columns SET name=? WHERE id=?", (name, cid))
         db.commit()
         flash("Столбец переименован", "ok")
-    else:
-        flash("Столбец не найден или пустое имя", "error")
     return redirect(url_for("board"))
 
 
@@ -1606,14 +1680,20 @@ def board_column_rename(cid):
 @login_required
 def board_column_delete(cid):
     db = get_db()
-    cnt = db.execute("SELECT COUNT(*) c FROM kb_tasks WHERE column_id=? AND deleted_at=''",
-                     (cid,)).fetchone()["c"]
-    if cnt:
-        flash(f"Сначала перенесите или удалите задачи из «{cnt}» этого столбца", "error")
+    col = db.execute("SELECT * FROM kb_columns WHERE id=?", (cid,)).fetchone()
+    if not col:
+        flash("Столбец не найден", "error")
+    elif col["locked"]:
+        flash("Системный столбец нельзя удалить", "error")
     else:
-        db.execute("DELETE FROM kb_columns WHERE id=?", (cid,))
-        db.commit()
-        flash("Столбец удалён", "ok")
+        cnt = db.execute("SELECT COUNT(*) c FROM kb_tasks WHERE column_id=? AND deleted_at=''",
+                         (cid,)).fetchone()["c"]
+        if cnt:
+            flash(f"Сначала перенесите или удалите задачи из «{cnt}» этого столбца", "error")
+        else:
+            db.execute("DELETE FROM kb_columns WHERE id=?", (cid,))
+            db.commit()
+            flash("Столбец удалён", "ok")
     return redirect(url_for("board"))
 
 
@@ -1634,8 +1714,11 @@ def board_task_add():
         flash("Укажите название задачи", "error")
         return redirect(url_for("board"))
     db = get_db()
-    col = request.form.get("column_id", "").strip()
-    column_id = int(col) if col.isdigit() else None
+    # все новые заявки (и с канбана, и из Эйзенхауэра) падают в Бэклог
+    backlog = db.execute(
+        "SELECT id FROM kb_columns WHERE locked=1 AND kind='kanban' LIMIT 1"
+    ).fetchone()
+    column_id = backlog["id"] if backlog else None
     cur = db.execute(
         "INSERT INTO kb_tasks (title, column_id, description, start_date, due_date) "
         "VALUES (?,?,?,?,?)",
