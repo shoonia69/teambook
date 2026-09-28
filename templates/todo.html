@@ -60,21 +60,19 @@
     {% endif %}
   </section>
 
-  <div class="todo-panel" style="padding:8px 12px;margin:6px 0">
-    <div class="filter-row" style="gap:8px">
-      <input type="text" id="todoSearch" placeholder="Поиск по задачам… (клавиша /)" oninput="todoApplyFilter()" style="flex:1;min-width:160px">
+  <div class="todo-filterbar">
+      <input type="text" id="todoSearch" placeholder="Поиск / (клавиша «/»)" oninput="todoApplyFilter()">
       {% if all_tags %}
-      <select id="todoTagFilter" onchange="todoApplyFilter()" style="min-width:130px">
+      <select id="todoTagFilter" onchange="todoApplyFilter()">
         <option value="">Все теги</option>
         {% for tg in all_tags %}<option value="{{ tg }}">{{ tg }}</option>{% endfor %}
       </select>
-      <button class="btn btn-xs" type="button" onclick="document.getElementById('todoSearch').value='';document.getElementById('todoTagFilter').value='';todoApplyFilter();">✕</button>
+      <button class="btn btn-xs" type="button" title="Сбросить фильтры" onclick="document.getElementById('todoSearch').value='';document.getElementById('todoTagFilter').value='';todoApplyFilter();">✕</button>
       {% endif %}
     </div>
-  </div>
 
-    <!-- МАТРИЦА 2×2: важно × срочно -->
-    <div class="eisen-row">
+      <!-- МАТРИЦА 2×2: важно × срочно -->
+      <div class="eisen-row">
       {% for q in quadrants %}
       {% set tasks = quad_tasks.get(q.key, []) %}
       <div class="eisen-quad {{ q.cls }}"

@@ -509,6 +509,10 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
 .todo-tag { font-size: 11px; color: var(--accent2); background: rgba(56,217,169,.12); padding: 1px 6px; border-radius: 6px; white-space: nowrap; }
 .todo-over { border-color: var(--danger) !important; }
 .todo-tpl { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 10px; align-items: center; }
+.todo-filterbar { display: flex; gap: 8px; align-items: center; margin: 2px 0 12px; max-width: 520px; }
+.todo-filterbar input { flex: 1; min-width: 120px; }
+.todo-filterbar select { max-width: 160px; }
+.todo-filterbar .btn { flex-shrink: 0; }
 .todo-actions { display: flex; gap: 4px; flex-shrink: 0; flex-wrap: wrap; }
 
 /* --- матрица Эйзенхауэра в личном todo (2×2, важно × срочно) --- */
