@@ -171,7 +171,28 @@
 <script>
 /* Drag & drop карточек между столбцами канбана */
 let draggedId = null;
-function dragTask(ev) { draggedId = ev.currentTarget.dataset.id; ev.dataTransfer.effectAllowed = 'move'; }
+function dragTask(ev) {
+  draggedId = ev.currentTarget.dataset.id;
+  ev.dataTransfer.effectAllowed = 'move';
+  ev.dataTransfer.setData('text/plain', draggedId);
+  /* Кастомное привидение: копия ТОЛЬКО карточки, компактная и непрозрачная.
+     По умолчанию браузер отрисовывает карточку во всю ширину столбца (flex),
+     из-за чего при перетаскивании «ездит» весь столбец. */
+  const card = ev.currentTarget;
+  const ghost = card.cloneNode(true);
+  ghost.classList.add('kb-drag-ghost');
+  ghost.style.position = 'fixed';
+  ghost.style.top = '-1000px';
+  ghost.style.left = '-1000px';
+  ghost.style.width = '220px';
+  ghost.querySelectorAll('details, input, button').forEach(function (el) {
+    el.remove();
+  });
+  document.body.appendChild(ghost);
+  ev.dataTransfer.setDragImage(ghost, 30, 20);
+  /* убрать клон из DOM после конца перетаскивания */
+  requestAnimationFrame(function () { setTimeout(function () { ghost.remove(); }, 0); });
+}
 function dropTask(ev, colId) {
   ev.preventDefault();
   ev.currentTarget.classList.remove('drag-over');

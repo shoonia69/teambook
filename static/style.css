@@ -244,8 +244,16 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
 .kb-card {
   background: var(--panel2); border: 1px solid var(--border);
   border-left: 3px solid var(--accent); border-radius: 8px;
-  padding: 8px 10px; cursor: grab;
+  padding: 8px 10px; cursor: grab; width: 100%;
 }
+/* привидение drag&drop — компактная непрозрачная копия карточки */
+.kb-drag-ghost {
+  width: 220px !important;
+  background: var(--panel2) !important; opacity: .95;
+  box-shadow: 0 8px 24px rgba(0,0,0,.5);
+  cursor: grabbing; z-index: 9999;
+}
+.kb-drag-ghost .kb-card-edit { display: none; }
 .kb-card:active { cursor: grabbing; }
 .kb-card-title { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
 .kb-card-desc { color: var(--muted); font-size: 12px; white-space: pre-wrap; margin-bottom: 6px; }
