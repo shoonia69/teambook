@@ -147,6 +147,29 @@ CREATE TABLE IF NOT EXISTS problems (
     text        TEXT NOT NULL DEFAULT '',
     created_at  TEXT DEFAULT (datetime('now'))
 );
+
+-- Канбан-доска и гант (задачи и сроки)
+
+-- Столбцы канбана (свободные, создаются руководителем)
+CREATE TABLE IF NOT EXISTS kb_columns (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT DEFAULT (datetime('now'))
+);
+
+-- Задачи: исполнитель (employee, может быть пустым) + сроки для ганта.
+CREATE TABLE IF NOT EXISTS kb_tasks (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    column_id    INTEGER REFERENCES kb_columns(id) ON DELETE SET NULL,
+    employee_id  INTEGER REFERENCES employees(id) ON DELETE SET NULL,
+    title        TEXT NOT NULL DEFAULT '',
+    description  TEXT DEFAULT '',
+    start_date   TEXT DEFAULT '',   -- дата начала (ISO YYYY-MM-DD)
+    due_date     TEXT DEFAULT '',   -- срок/дата окончания
+    created_at   TEXT DEFAULT (datetime('now')),
+    updated_at   TEXT DEFAULT (datetime('now'))
+);
 """
 
 
@@ -1365,6 +1388,242 @@ def report_employee(eid):
         src = tmp.name
 
     return send_file(src, as_attachment=True, download_name=name, mimetype=mimetype, max_age=0)
+
+
+# --------------------------------------------------------------------------- #
+# Канбан-доска и гант
+# --------------------------------------------------------------------------- #
+def _board_ctx(db, month=None, year=None):
+    """Общий контекст для доски: столбцы, задачи, сотрудники, гант-сетка.
+
+    Возвращает dict с колонками канбана (задачи по столбцам), списком активных
+    сотрудников и данными ганта на выбранный месяц.
+    """
+    columns = db.execute(
+        "SELECT * FROM kb_columns ORDER BY sort_order, id").fetchall()
+
+    tasks = db.execute(
+        """SELECT t.*, e.name AS emp_name
+           FROM kb_tasks t
+           LEFT JOIN employees e ON e.id = t.employee_id
+           ORDER BY t.id DESC""").fetchall()
+    col_tasks = {c["id"]: [] for c in columns}
+    col_tasks.setdefault(None, [])  # задачи без столбца (столбец удалён)
+    for t in tasks:
+        col_tasks.setdefault(t["column_id"], []).append(t)
+
+    # столбцы по порядку, но всегда с финальным «без столбца» для надёжности
+    cols_view = list(columns) + [None]
+
+    employees = db.execute(
+        "SELECT id, name FROM employees WHERE active = 1 ORDER BY name COLLATE NOCASE"
+    ).fetchall()
+
+# --- гант: только задачи с исполнителем и обеими датами ---
+    from calendar import monthrange, month_name as _mn
+    now = datetime.now()
+    month = month or now.month
+    year = year or now.year
+    # нормализация месяца
+    if month < 1: month, year = 12, year - 1
+    if month > 12: month, year = 1, year + 1
+    ndays = monthrange(year, month)[1]
+    # день недели 1-го числа (понедельник=0) для подсветки выходных
+    first_wd = monthrange(year, month)[0]
+    def _iso(y, m, d):
+        return f"{y:04d}-{m:02d}-{d:02d}"
+    days = []
+    for d in range(1, ndays + 1):
+        wd = (first_wd + d - 1) % 7
+        days.append({
+            "num": d,
+            "weekend": wd >= 5,
+            "iso": _iso(year, month, d),
+        })
+    today_iso = now.strftime("%Y-%m-%d")
+
+    gantt_tasks = [
+        t for t in tasks
+        if t["employee_id"] and t["start_date"] and t["due_date"]
+    ]
+    gantt_tasks.sort(key=lambda t: (t["start_date"], t["id"]))
+    mon_start = _iso(year, month, 1)
+    mon_end = _iso(year, month, ndays)
+    # группировка по сотруднику (только задачи, пересекающие выбранный месяц)
+    by_emp = {}
+    for t in gantt_tasks:
+        # пропускаем, если задача целиком вне месяца
+        if t["due_date"] < mon_start or t["start_date"] > mon_end:
+            continue
+        ef = max(t["start_date"], mon_start)
+        ee = min(t["due_date"], mon_end)
+        off = (datetime.strptime(ef, "%Y-%m-%d") - datetime.strptime(mon_start, "%Y-%m-%d")).days
+        dur = (datetime.strptime(ee, "%Y-%m-%d") - datetime.strptime(ef, "%Y-%m-%d")).days + 1
+        by_emp.setdefault(t["employee_id"], {
+            "name": t["emp_name"] or f"#{t['employee_id']}",
+            "tasks": [],
+        })["tasks"].append({
+            "id": t["id"],
+            "title": t["title"],
+            "start": t["start_date"],
+            "due": t["due_date"],
+            "offset": off,
+            "dur": dur,
+            "overdue": t["due_date"] < today_iso,
+        })
+    return {
+        "columns": columns,
+        "col_tasks": col_tasks,
+        "cols_view": cols_view,
+        "employees": employees,
+        "gantt_by_emp": by_emp,
+        "gantt_days": days,
+        "gmonth": month,
+        "gyear": year,
+        "gmonth_name": _mn[month],
+        "gnext": (month + 1, year) if month < 12 else (1, year + 1),
+        "gprev": (month - 1, year) if month > 1 else (12, year - 1),
+        "today_iso": today_iso,
+    }
+
+
+@app.route("/board")
+@login_required
+def board():
+    db = get_db()
+    try:
+        month = int(request.args.get("month", 0)) or None
+    except (TypeError, ValueError):
+        month = None
+    try:
+        year = int(request.args.get("year", 0)) or None
+    except (TypeError, ValueError):
+        year = None
+    ctx = _board_ctx(db, month=month, year=year)
+    return render_template("board.html", **ctx)
+
+
+@app.route("/board/column/add", methods=["POST"])
+@login_required
+def board_column_add():
+    name = request.form.get("name", "").strip()
+    if not name:
+        flash("Укажите название столбца", "error")
+        return redirect(url_for("board"))
+    db = get_db()
+    row = db.execute("SELECT COALESCE(MAX(sort_order), -1) m FROM kb_columns").fetchone()
+    db.execute("INSERT INTO kb_columns (name, sort_order) VALUES (?, ?)",
+               (name, row["m"] + 1))
+    db.commit()
+    flash(f"Столбец «{name}» создан", "ok")
+    return redirect(url_for("board"))
+
+
+@app.route("/board/column/<int:cid>/rename", methods=["POST"])
+@login_required
+def board_column_rename(cid):
+    name = request.form.get("name", "").strip()
+    db = get_db()
+    if name and db.execute("SELECT 1 FROM kb_columns WHERE id=?", (cid,)).fetchone():
+        db.execute("UPDATE kb_columns SET name=? WHERE id=?", (name, cid))
+        db.commit()
+        flash("Столбец переименован", "ok")
+    else:
+        flash("Столбец не найден или пустое имя", "error")
+    return redirect(url_for("board"))
+
+
+@app.route("/board/column/<int:cid>/delete", methods=["POST"])
+@login_required
+def board_column_delete(cid):
+    db = get_db()
+    cnt = db.execute("SELECT COUNT(*) c FROM kb_tasks WHERE column_id=?",
+                     (cid,)).fetchone()["c"]
+    if cnt:
+        flash(f"Сначала перенесите или удалите задачи из «{cnt}» этого столбца", "error")
+    else:
+        db.execute("DELETE FROM kb_columns WHERE id=?", (cid,))
+        db.commit()
+        flash("Столбец удалён", "ok")
+    return redirect(url_for("board"))
+
+
+@app.route("/board/task/add", methods=["POST"])
+@login_required
+def board_task_add():
+    title = request.form.get("title", "").strip()
+    if not title:
+        flash("Укажите название задачи", "error")
+        return redirect(url_for("board"))
+    db = get_db()
+    col = request.form.get("column_id", "").strip()
+    column_id = int(col) if col.isdigit() else None
+    emp = request.form.get("employee_id", "").strip()
+    employee_id = int(emp) if emp.isdigit() else None
+    db.execute(
+        "INSERT INTO kb_tasks (title, column_id, employee_id, description, "
+        "start_date, due_date) VALUES (?,?,?,?,?,?)",
+        (title, column_id, employee_id,
+         request.form.get("description", ""),
+         request.form.get("start_date", ""),
+         request.form.get("due_date", "")),
+    )
+    db.commit()
+    flash("Задача добавлена", "ok")
+    return redirect(url_for("board"))
+
+
+@app.route("/board/task/<int:tid>/edit", methods=["POST"])
+@login_required
+def board_task_edit(tid):
+    db = get_db()
+    t = db.execute("SELECT * FROM kb_tasks WHERE id=?", (tid,)).fetchone()
+    if not t:
+        abort(404)
+    title = request.form.get("title", "").strip()
+    if not title:
+        flash("Название задачи не может быть пустым", "error")
+        return redirect(url_for("board"))
+    col = request.form.get("column_id", "").strip()
+    column_id = int(col) if col.isdigit() else None
+    emp = request.form.get("employee_id", "").strip()
+    employee_id = int(emp) if emp.isdigit() else None
+    db.execute(
+        "UPDATE kb_tasks SET title=?, column_id=?, employee_id=?, description=?, "
+        "start_date=?, due_date=?, updated_at=datetime('now') WHERE id=?",
+        (title, column_id, employee_id,
+         request.form.get("description", ""),
+         request.form.get("start_date", ""),
+         request.form.get("due_date", ""), tid),
+    )
+    db.commit()
+    flash("Задача обновлена", "ok")
+    return redirect(url_for("board"))
+
+
+@app.route("/board/task/<int:tid>/move", methods=["POST"])
+@login_required
+def board_task_move(tid):
+    """Drag&drop карточки: поменять столбец (статус) задачи."""
+    db = get_db()
+    if not db.execute("SELECT 1 FROM kb_tasks WHERE id=?", (tid,)).fetchone():
+        abort(404)
+    col = request.form.get("column_id", "").strip()
+    column_id = int(col) if col.isdigit() else None
+    db.execute("UPDATE kb_tasks SET column_id=?, updated_at=datetime('now') WHERE id=?",
+               (column_id, tid))
+    db.commit()
+    return "", 204
+
+
+@app.route("/board/task/<int:tid>/delete", methods=["POST"])
+@login_required
+def board_task_delete(tid):
+    db = get_db()
+    db.execute("DELETE FROM kb_tasks WHERE id=?", (tid,))
+    db.commit()
+    flash("Задача удалена", "ok")
+    return redirect(url_for("board"))
 
 
 # --------------------------------------------------------------------------- #

@@ -380,6 +380,76 @@ c.get("/logout")
 r = c.get("/", follow_redirects=True)
 check("после логаута снова логин", "/login" in r.request.path)
 
+# === КАНБАН-ДОСКА И ГАНТ ===
+c.post("/login", data={"password": "test-pass-123"}, follow_redirects=True)
+
+# страница доступна (до создания столбцов — пустая доска)
+r = c.get("/board")
+check("доска открывается", r.status_code == 200 and "Канбан" in r.get_data(as_text=True))
+# создать столбцы
+c.post("/board/column/add", data={"name": "В работе"}, follow_redirects=True)
+c.post("/board/column/add", data={"name": "Готово"}, follow_redirects=True)
+cols = dbq("SELECT id, name, sort_order FROM kb_columns ORDER BY sort_order")
+check("два столбца созданы", len(cols) == 2 and cols[0]["name"] == "В работе")
+# переименовать
+c.post(f"/board/column/{cols[1]['id']}/rename", data={"name": "Сделано"}, follow_redirects=True)
+check("столбец переименован",
+      len(dbq("SELECT * FROM kb_columns WHERE id=? AND name='Сделано'", (cols[1]["id"],))) == 1)
+
+# создать задачу в первом столбце с сотрудником и датами
+emp_kb = dbq("SELECT id, name FROM employees WHERE active=1 LIMIT 1")[0]
+c.post("/board/task/add", data={
+    "title": "Задача А", "column_id": str(cols[0]["id"]),
+    "employee_id": str(emp_kb["id"]),
+    "start_date": "2026-10-01", "due_date": "2026-10-10",
+    "description": "описание А",
+}, follow_redirects=True)
+tasks = dbq("SELECT * FROM kb_tasks WHERE title='Задача А'")
+check("задача создана с исполнителем и датами",
+      len(tasks) == 1 and tasks[0]["employee_id"] == emp_kb["id"]
+      and tasks[0]["start_date"] == "2026-10-01" and tasks[0]["due_date"] == "2026-10-10")
+
+# добавить задачу без исполнителя/дат (только на канбане)
+c.post("/board/task/add", data={"title": "Задача Б", "column_id": str(cols[0]["id"])},
+       follow_redirects=True)
+
+# страница рендерит карточки и гант-элементы
+r = c.get(f"/board?month=10&year=2026")
+h = r.get_data(as_text=True)
+check("канбан показывает карточку", "Задача А" in h and "Задача Б" in h)
+check("гант показывает сотрудника и бар", emp_kb["name"] in h and "gantt-bar" in h)
+check("задача без дат на гант не попадает", "gantt-emp-col" in h)  # по коду — без дат не попадают в gantt_by_emp
+
+# drag&drop: переместить задачу в другой столбец
+r = c.post(f"/board/task/{tasks[0]['id']}/move", data={"column_id": str(cols[1]["id"])})
+check("перемещение задачи меняет столбец",
+      r.status_code == 204 and dbq("SELECT column_id FROM kb_tasks WHERE id=?",
+                                   (tasks[0]["id"],))[0]["column_id"] == cols[1]["id"])
+
+# редактирование задачи
+r = c.post(f"/board/task/{tasks[0]['id']}/edit", data={
+    "title": "Задача А (ред)", "column_id": str(cols[0]["id"]),
+    "employee_id": str(emp_kb["id"]),
+    "start_date": "2026-11-02", "due_date": "2026-11-05", "description": "обновлено",
+}, follow_redirects=True)
+check("задача отредактирована",
+      len(dbq("SELECT * FROM kb_tasks WHERE id=? AND title='Задача А (ред)' AND due_date='2026-11-05'",
+              (tasks[0]["id"],))) == 1)
+
+# удаление столбца с задачами запрещено
+r = c.post(f"/board/column/{cols[0]['id']}/delete", follow_redirects=True)
+check("столбец с задачами не удаляется",
+      len(dbq("SELECT * FROM kb_columns WHERE id=?", (cols[0]["id"],))) == 1)
+# удалить задачи, потом столбец удаляется
+taskB = dbq("SELECT id FROM kb_tasks WHERE title='Задача Б'")
+if taskB:
+    c.post(f"/board/task/{taskB[0]['id']}/delete", follow_redirects=True)
+r = c.post(f"/board/task/{tasks[0]['id']}/delete", follow_redirects=True)
+r = c.post(f"/board/column/{cols[0]['id']}/delete", follow_redirects=True)
+check("задача удалена и пустой столбец удалён",
+      len(dbq("SELECT * FROM kb_tasks WHERE id=?", (tasks[0]["id"],))) == 0
+      and len(dbq("SELECT * FROM kb_columns WHERE id=?", (cols[0]["id"],))) == 0)
+
 print()
 if failures:
     print(f"ИТОГ: {len(failures)} ПРОВАЛЕНО -> {failures}")

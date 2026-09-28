@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% block title %}Доска задач · TeamBook{% endblock %}
+{% block content %}
+
+<div class="toolbar">
+  <h2 style="margin:0">Доска задач и сроки</h2>
+  <div class="spacer"></div>
+  <a class="btn" href="{{ url_for('index') }}">← К сотрудникам</a>
+</div>
+
+<div class="board-wrap">
+
+  <!-- ===================== КАНБАН ===================== -->
+  <section class="kanban-panel">
+    <div class="panel-title">Канбан</div>
+    <div class="kb-add-col">
+      <form method="post" action="{{ url_for('board_column_add') }}" style="display:flex;gap:8px;flex-wrap:wrap">
+        <input type="text" name="name" placeholder="Новый столбец..." required>
+        <button class="btn small primary" type="submit">+ Столбец</button>
+      </form>
+    </div>
+
+    <div class="kb-row">
+      <!-- столбцы (создаваемые руководителем) -->
+      {% for col in cols_view %}
+        {% set tasks = col_tasks.get(col.id if col else None, []) %}
+        {% if col or tasks %}
+        <div class="kb-col" data-colid="{{ col.id if col else '' }}"
+             ondragover="event.preventDefault(); this.classList.add('drag-over')"
+             ondragleave="this.classList.remove('drag-over')"
+             ondrop="dropTask(event, {{ col.id if col else 'null' }})">
+          <div class="kb-col-head">
+            <span class="kb-col-name">{{ col.name if col else 'Без столбца' }}</span>
+            <span class="kb-count">{{ tasks|length }}</span>
+            {% if col %}
+            <span class="kb-col-actions">
+              <form method="post" action="{{ url_for('board_column_rename', cid=col.id) }}" style="display:inline;margin:0">
+                <input type="text" name="name" value="{{ col.name }}" placeholder="Переименовать"
+                       title="Переименовать столбец" style="width:120px">
+              </form>
+              <form method="post" action="{{ url_for('board_column_delete', cid=col.id) }}" style="display:inline;margin:0"
+                    onsubmit="return confirm('Удалить столбец? Задачи из него останутся без столбца.')">
+                <button class="btn btn-xs danger" type="submit" title="Удалить столбец">✕</button>
+              </form>
+            </span>
+            {% endif %}
+          </div>
+
+          <div class="kb-col-cards">
+            {% for t in tasks %}
+            <div class="kb-card" draggable="true" ondragstart="dragTask(event)"
+                 data-id="{{ t.id }}">
+              <div class="kb-card-title">{{ t.title }}</div>
+              {% if t.description %}<div class="kb-card-desc">{{ t.description }}</div>{% endif %}
+              <div class="kb-card-meta">
+                {% if t.emp_name %}<span class="emp" title="Исполнитель">👤 {{ t.emp_name }}</span>{% endif %}
+                {% if t.start_date or t.due_date %}
+                  <span class="dates" title="Сроки">📅 {% if t.start_date %}{{ t.start_date[5:] }}{% endif %}–{% if t.due_date %}{{ t.due_date[5:] }}{% endif %}</span>
+                {% endif %}
+                <div class="spacer"></div>
+                <details class="kb-card-edit">
+                  <summary title="Редактировать/удалить">✎</summary>
+                  <div class="kb-edit-pop" onclick="event.stopPropagation()">
+                    <form method="post" action="{{ url_for('board_task_edit', tid=t.id) }}">
+                      <label>Название *</label>
+                      <input type="text" name="title" value="{{ t.title }}" required>
+                      <label>Исполнитель</label>
+                      <select name="employee_id">
+                        <option value="">— без исполнителя —</option>
+                        {% for e in employees %}
+                          <option value="{{ e.id }}" {{ 'selected' if e.id == t.employee_id }}>{{ e.name }}</option>
+                        {% endfor %}
+                      </select>
+                      <label>Статус (столбец)</label>
+                      <select name="column_id">
+                        {% for c in columns %}
+                          <option value="{{ c.id }}" {{ 'selected' if c.id == t.column_id }}>{{ c.name }}</option>
+                        {% endfor %}
+                      </select>
+                      <label>Дата начала</label>
+                      <input type="date" name="start_date" value="{{ t.start_date }}">
+                      <label>Срок</label>
+                      <input type="date" name="due_date" value="{{ t.due_date }}">
+                      <label>Описание</label>
+                      <textarea name="description" rows="3">{{ t.description }}</textarea>
+                      <div class="btn-row">
+                        <button class="btn small primary" type="submit">Сохранить</button>
+                      </div>
+                    </form>
+                    <form method="post" action="{{ url_for('board_task_delete', tid=t.id) }}" style="margin-top:8px"
+                          onsubmit="return confirm('Удалить задачу?')">
+                      <button class="btn small danger" type="submit">Удалить</button>
+                    </form>
+                  </div>
+                </details>
+              </div>
+            </div>
+            {% else %}
+            <div class="kb-empty">—</div>
+            {% endfor %}
+          </div>
+
+          <form method="post" action="{{ url_for('board_task_add') }}" class="kb-add-task">
+            <input type="hidden" name="column_id" value="{{ col.id if col else '' }}">
+            <input type="text" name="title" placeholder="+ задача..." required>
+            <button class="btn small" type="submit">+</button>
+          </form>
+        </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </section>
+
+  <!-- ===================== ГАНТ ===================== -->
+  <section class="gantt-panel">
+    <div class="gantt-head">
+      <div class="panel-title" style="margin:0">Гант · {{ gmonth_name }} {{ gyear }}</div>
+      <div class="spacer"></div>
+      <a class="btn small" href="{{ url_for('board', month=gprev[0], year=gprev[1]) }}">← мес.</a>
+      <a class="btn small" href="{{ url_for('board') }}" title="Текущий месяц">Сегодня</a>
+      <a class="btn small" href="{{ url_for('board', month=gnext[0], year=gnext[1]) }}">мес. →</a>
+    </div>
+
+    {% if gantt_by_emp %}
+    <div class="gantt-scroll">
+      <table class="gantt-table">
+        <thead>
+          <tr>
+            <th class="gantt-emp-col">Сотрудник</th>
+            {% for d in gantt_days %}
+              <th class="{% if d.weekend %}gantt-we{% endif %} {% if d.iso == today_iso %}gantt-today{% endif %}">
+                <span class="gantt-dow">{{ 'Сб' if d.weekend and loop.index % 7 in (6,0) else '' }}</span>{{ d.num }}
+              </th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for eid, e in gantt_by_emp.items() %}
+          <tr>
+            <td class="gantt-emp-col">{{ e.name }}</td>
+            {% for d in gantt_days %}
+              <td class="gantt-cell {% if d.weekend %}gantt-we{% endif %} {% if d.iso == today_iso %}gantt-today{% endif %}"></td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <!-- наложение баров поверх сетки -->
+      <div class="gantt-bars" style="--gantt-ndays: {{ gantt_days|length }}">
+        {% for eid, e in gantt_by_emp.items() %}
+          {% set row_i = loop.index0 %}
+          {% for tst in e.tasks %}
+            <div class="gantt-bar {% if tst.overdue %}gantt-bar-overdue{% endif %}"
+                 style="left:calc(var(--gantt-empw) + {{ tst.offset }} * var(--gantt-dayw)); top:calc(var(--gantt-headh) + {{ row_i }} * var(--gantt-rowh)); width:calc({{ tst.dur }} * var(--gantt-dayw) - 2px);"
+                 title="{{ tst.title }} · {{ tst.start }} – {{ tst.due }}">
+              <span class="gantt-bar-label">{{ tst.title }}</span>
+            </div>
+          {% endfor %}
+        {% endfor %}
+      </div>
+    </div>
+    {% else %}
+    <div class="card"><div class="empty">На месяц нет задач с исполнителем и датами. Они появятся здесь, когда у задачи укажете сотрудника и сроки на канбане.</div></div>
+    {% endif %}
+  </section>
+
+</div>
+
+<script>
+/* Drag & drop карточек между столбцами канбана */
+let draggedId = null;
+function dragTask(ev) { draggedId = ev.currentTarget.dataset.id; ev.dataTransfer.effectAllowed = 'move'; }
+function dropTask(ev, colId) {
+  ev.preventDefault();
+  ev.currentTarget.classList.remove('drag-over');
+  if (!draggedId) return;
+  var fd = new FormData();
+  fd.append('column_id', colId === null ? '' : colId);
+  fetch('/board/task/' + encodeURIComponent(draggedId) + '/move', { method: 'POST', body: fd })
+    .then(function () { location.reload(); });
+  draggedId = null;
+}
+</script>
+
+{% endblock %}

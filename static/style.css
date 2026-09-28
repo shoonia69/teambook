@@ -212,3 +212,91 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
 @media (max-width: 760px) {
   .form-grid, .semester-blocks { grid-template-columns: 1fr; }
 }
+
+/* ===================== Канбан и гант ===================== */
+.board-wrap {
+  display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap;
+}
+.kanban-panel { flex: 1 1 420px; min-width: 380px; }
+.gantt-panel { flex: 1 1 520px; min-width: 460px; }
+
+.kb-row { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 10px; align-items: flex-start; }
+.kb-col {
+  flex: 0 0 240px; width: 240px; min-height: 140px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 10px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.kb-col.drag-over { border-color: var(--accent); background: rgba(79,140,255,.06); }
+.kb-col-head {
+  display: flex; align-items: center; gap: 8px;
+  font-weight: 600; padding: 2px 2px 6px; border-bottom: 1px solid var(--border);
+}
+.kb-col-name { flex: 1; font-size: 14px; }
+.kb-count { color: var(--muted); font-size: 12px; background: var(--panel2); border-radius: 10px; padding: 0 8px; }
+.kb-col-actions { display: flex; gap: 6px; align-items: center; }
+.kb-col-actions input[type="text"] { width: 110px !important; padding: 4px 6px; font-size: 12px; }
+.btn-xs { padding: 2px 7px; font-size: 12px; line-height: 1.4; }
+
+.kb-col-cards { display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.kb-empty { color: var(--muted); font-size: 12px; text-align: center; opacity: .5; }
+.kb-card {
+  background: var(--panel2); border: 1px solid var(--border);
+  border-left: 3px solid var(--accent); border-radius: 8px;
+  padding: 8px 10px; cursor: grab;
+}
+.kb-card:active { cursor: grabbing; }
+.kb-card-title { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+.kb-card-desc { color: var(--muted); font-size: 12px; white-space: pre-wrap; margin-bottom: 6px; }
+.kb-card-meta { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 12px; flex-wrap: wrap; }
+.kb-card-meta .spacer { flex: 1; }
+
+.kb-add-col { margin-bottom: 12px; }
+.kb-add-col input, .kb-add-task input { flex: 1; min-width: 120px; }
+.kb-add-task { display: flex; gap: 6px; margin-top: auto; }
+.kb-add-task input { padding: 6px 8px; }
+
+.kb-card-edit { position: relative; }
+.kb-card-edit summary { cursor: pointer; list-style: none; color: var(--muted); padding: 0 4px; }
+.kb-card-edit summary::-webkit-details-marker { display: none; }
+.kb-edit-pop {
+  position: absolute; right: 0; top: 22px; z-index: 50;
+  width: 260px; background: var(--panel2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.5);
+}
+.kb-edit-pop label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 3px; }
+.kb-edit-pop input, .kb-edit-pop select, .kb-edit-pop textarea { width: 100%; }
+.kb-edit-pop input { padding: 6px 8px; }
+
+/* Гант */
+.gantt-head { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+.gantt-scroll { position: relative; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); }
+:root {
+  --gantt-empw: 160px;
+  --gantt-dayw: 26px;
+  --gantt-rowh: 30px;
+  --gantt-headh: 30px;
+}
+.gantt-table { border-collapse: collapse; }
+.gantt-table th, .gantt-table td {
+  width: var(--gantt-dayw); min-width: var(--gantt-dayw); max-width: var(--gantt-dayw);
+  height: var(--gantt-rowh); border: 1px solid var(--border); text-align: center;
+  font-size: 12px; color: var(--muted); padding: 0;
+}
+.gantt-table thead th { height: var(--gantt-headh); font-weight: 600; background: var(--panel2); }
+.gantt-emp-col { width: var(--gantt-empw) !important; min-width: var(--gantt-empw) !important; max-width: var(--gantt-empw) !important; text-align: left !important; font-weight: 600; color: var(--text) !important; padding: 0 10px !important; position: sticky; left: 0; background: var(--panel2); z-index: 2; }
+.gantt-we { background: rgba(255,255,255,.03); }
+.gantt-today { background: rgba(79,140,255,.18); }
+.gantt-bars {
+  position: absolute; left: 0; top: 0; pointer-events: none; z-index: 5;
+  width: calc(var(--gantt-empw) + var(--gantt-ndays, 31) * var(--gantt-dayw));
+  min-height: 100%;
+}
+.gantt-bar {
+  position: absolute; height: 22px; margin-top: 4px;
+  background: var(--accent); border-radius: 5px;
+  display: flex; align-items: center; padding: 0 6px; overflow: hidden;
+  white-space: nowrap; color: #04121f; pointer-events: auto;
+}
+.gantt-bar-overdue { background: var(--danger); }
+.gantt-bar-label { font-size: 11px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
