@@ -40,13 +40,6 @@
       <input type="date" name="due_date" value="{{ t.due_date }}">
     </div>
   </div>
-  <label>Квадрант Эйзенхауэра</label>
-  <select name="emi">
-    <option value="">— не распределена —</option>
-    {% for q in quads %}
-      <option value="{{ q.key }}" {{ 'selected' if t.emi == q.key }}>{{ q.name }}</option>
-    {% endfor %}
-  </select>
   <label>Описание</label>
   <textarea name="description" rows="4">{{ t.description }}</textarea>
   <div class="btn-row">

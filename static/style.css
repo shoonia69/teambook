@@ -365,30 +365,3 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
 
 /* чипы исполнителей на карточке */
 .kb-card .emp { display: inline-block; }
-
-/* ---- Матрица Эйзенхауэра: сетка 2×2 ---- */
-.emi-grid {
-  display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 14px;
-}
-.emi-quad {
-  display: flex; flex-direction: column; gap: 8px;
-  border: 2px solid var(--border); border-radius: 10px;
-  padding: 12px; background: var(--panel2); min-height: 170px;
-}
-.emi-quad.drag-over { border-color: var(--accent); background: var(--hover, rgba(128,128,128,.1)); }
-.emi-head {
-  font-weight: 700; display: flex; align-items: center; gap: 8px; font-size: 15px;
-  padding-bottom: 6px; border-bottom: 1px dashed var(--border);
-}
-.emi-quad.emi-emi1 .emi-head { color: var(--danger); }
-.emi-quad.emi-emi2 .emi-head { color: var(--accent); }
-.emi-quad.emi-emi3 .emi-head { color: #e67e22; }
-.emi-quad.emi-emi4 .emi-head { color: var(--muted); }
-.emi-cards { display: flex; flex-direction: column; gap: 8px; flex: 1; }
-.emi-cards .kb-card { width: 100%; }
-@media (max-width: 900px) { .emi-grid { grid-template-columns: 1fr; } }
-.emi-cell {
-  margin-top: 16px; border: 2px dashed var(--border); border-radius: 10px;
-  padding: 12px; background: var(--panel2);
-}
-.emi-cell .kb-card { width: 220px; flex: 0 1 auto; }
