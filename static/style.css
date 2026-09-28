@@ -508,6 +508,7 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
   font-weight: 600; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;
 }
 .eisen-qicon { font-size: 16px; }
+.eisen-qaction { font-size: 12px; color: var(--muted); font-weight: 400; margin-right: 2px; }
 .eisen-quad.q-iu { border-top: 3px solid var(--danger); }
 .eisen-quad.q-in { border-top: 3px solid #e67e22; }
 .eisen-quad.q-nu { border-top: 3px solid #f1c40f; }

@@ -57,7 +57,7 @@
            ondragover="event.preventDefault(); this.classList.add('drag-over')"
            ondragleave="this.classList.remove('drag-over')"
            ondrop="todoDrop(event, '{{ q.key }}')">
-        <div class="eisen-qhead"><span class="eisen-qicon">{{ q.icon }}</span> {{ q.title }} <span class="kb-count">{{ tasks|length }}</span></div>
+        <div class="eisen-qhead"><span class="eisen-qicon">{{ q.icon }}</span> {{ q.title }} <span class="eisen-qaction">{{ q.action }}</span> <span class="kb-count">{{ tasks|length }}</span></div>
         {% if tasks %}
         <div class="todo-list">
           {% for t in tasks %}

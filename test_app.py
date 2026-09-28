@@ -637,6 +637,8 @@ r = c.get("/todo")
 h = r.get_data(as_text=True)
 check("todo: страница показывает бэклог и матрицу",
       "Бэклог" in h and "Важно · Срочно" in h and "Не важно · Не срочно" in h and "Туду-задача А" in h)
+check("todo: у квадрантов есть описания (Сделать/Запланировать/Делегировать/Удалить)",
+      all(a in h for a in ["Сделать", "Запланировать", "Делегировать", "Удалить"]))
 # переместить А в квадрант «важно + срочно» (drag&drop -> /todo/<id>/move)
 r = c.post(f"/todo/{todos['Туду-задача А']}/move", data={"status": "q_iu"})
 row = dbq("SELECT status, sort_order FROM todo_items WHERE id=?",

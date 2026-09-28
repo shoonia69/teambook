@@ -2119,10 +2119,10 @@ def todo_page():
 
 # Квадранты Эйзенхауэра в личном todo (важно × срочно)
 QUADRANTS = [
-    {"key": "q_iu", "title": "Важно · Срочно",  "icon": "🔴", "cls": "q-iu"},
-    {"key": "q_in", "title": "Важно · Не срочно", "icon": "🟠", "cls": "q-in"},
-    {"key": "q_nu", "title": "Не важно · Срочно", "icon": "🟡", "cls": "q-nu"},
-    {"key": "q_nn", "title": "Не важно · Не срочно", "icon": "🟢", "cls": "q-nn"},
+    {"key": "q_iu", "title": "Важно · Срочно",      "icon": "🔴", "cls": "q-iu", "action": "Сделать"},
+    {"key": "q_in", "title": "Важно · Не срочно",   "icon": "🟠", "cls": "q-in", "action": "Запланировать"},
+    {"key": "q_nu", "title": "Не важно · Срочно",   "icon": "🟡", "cls": "q-nu", "action": "Делегировать"},
+    {"key": "q_nn", "title": "Не важно · Не срочно", "icon": "🟢", "cls": "q-nn", "action": "Удалить"},
 ]
 
 
