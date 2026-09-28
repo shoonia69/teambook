@@ -1,0 +1,62 @@
+{% if in_archive %}
+  <div class="tm-note">Эта задача в архиве. Верните её на доску, чтобы редактировать.</div>
+{% endif %}
+<form method="post" action="{{ url_for('board_task_edit', tid=t.id) }}">
+  <input type="hidden" name="shortcut">
+  <label>Название *</label>
+  <input type="text" name="title" value="{{ t.title }}" required>
+  <label>Исполнители</label>
+  <div class="tm-search">
+    <input type="text" id="tm-employee-search" placeholder="Поиск по имени..." autocomplete="off"
+           oninput="tmFilterEmployees(this)">
+  </div>
+  <div class="tm-employees" id="tm-employee-list">
+    {% for e in employees %}
+      <label class="tm-emp {% if e.id in selected %}tm-selected{% endif %}" data-name="{{ e.name|lower }}">
+        <input type="checkbox" name="employee_id" value="{{ e.id }}" class="tm-ck"
+               {% if e.id in selected %}checked{% endif %}
+               onchange="this.closest('label').classList.toggle('tm-selected', this.checked)">
+        <span>{{ e.name }}</span>
+      </label>
+    {% endfor %}
+    {% if not employees %}
+      <div class="sub">В справочнике нет активных сотрудников</div>
+    {% endif %}
+  </div>
+  <label>Статус (столбец)</label>
+  <select name="column_id">
+    {% for c in columns %}
+      <option value="{{ c.id }}" {{ 'selected' if c.id == t.column_id }}>{{ c.name }}</option>
+    {% endfor %}
+  </select>
+  <div class="tm-dates">
+    <div>
+      <label>Дата начала</label>
+      <input type="date" name="start_date" value="{{ t.start_date }}">
+    </div>
+    <div>
+      <label>Срок</label>
+      <input type="date" name="due_date" value="{{ t.due_date }}">
+    </div>
+  </div>
+  <label>Описание</label>
+  <textarea name="description" rows="4">{{ t.description }}</textarea>
+  <div class="btn-row">
+    <button class="btn primary" type="submit">Сохранить</button>
+  </div>
+</form>
+
+<div class="tm-note" style="margin-top:10px">
+  ↕ Перетащите карточку на доске в <em>Архив</em> или <em>Корзину</em> —
+  здесь доступна только правка. Удалить можно в корзине.
+</div>
+
+<script>
+function tmFilterEmployees(inp) {
+  var q = inp.value.trim().toLowerCase();
+  var labels = document.querySelectorAll('#tm-employee-list .tm-emp');
+  labels.forEach(function (l) {
+    l.style.display = l.dataset.name.indexOf(q) === 0 ? '' : 'none';
+  });
+}
+</script>

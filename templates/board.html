@@ -48,51 +48,20 @@
 
           <div class="kb-col-cards">
             {% for t in tasks %}
-            <div class="kb-card" draggable="true" ondragstart="dragTask(event)"
-                 data-id="{{ t.id }}">
+            <div class="kb-card" draggable="true"
+                 ondragstart="dragTask(event)"
+                 onclick="openCard({{ t.id }})"
+                 data-id="{{ t.id }}" title="Клик — открыть">
               <div class="kb-card-title">{{ t.title }}</div>
               {% if t.description %}<div class="kb-card-desc">{{ t.description }}</div>{% endif %}
               <div class="kb-card-meta">
-                {% if t.emp_name %}<span class="emp" title="Исполнитель">👤 {{ t.emp_name }}</span>{% endif %}
+                {% set who = members.get(t.id, []) %}
+                {% if who %}
+                  <span class="emp" title="Исполнители">👤 {{ who | join(', ') }}</span>
+                {% endif %}
                 {% if t.start_date or t.due_date %}
                   <span class="dates" title="Сроки">📅 {% if t.start_date %}{{ t.start_date[5:] }}{% endif %}–{% if t.due_date %}{{ t.due_date[5:] }}{% endif %}</span>
                 {% endif %}
-                <div class="spacer"></div>
-                <details class="kb-card-edit">
-                  <summary title="Редактировать/удалить">✎</summary>
-                  <div class="kb-edit-pop" onclick="event.stopPropagation()">
-                    <form method="post" action="{{ url_for('board_task_edit', tid=t.id) }}">
-                      <label>Название *</label>
-                      <input type="text" name="title" value="{{ t.title }}" required>
-                      <label>Исполнитель</label>
-                      <select name="employee_id">
-                        <option value="">— без исполнителя —</option>
-                        {% for e in employees %}
-                          <option value="{{ e.id }}" {{ 'selected' if e.id == t.employee_id }}>{{ e.name }}</option>
-                        {% endfor %}
-                      </select>
-                      <label>Статус (столбец)</label>
-                      <select name="column_id">
-                        {% for c in columns %}
-                          <option value="{{ c.id }}" {{ 'selected' if c.id == t.column_id }}>{{ c.name }}</option>
-                        {% endfor %}
-                      </select>
-                      <label>Дата начала</label>
-                      <input type="date" name="start_date" value="{{ t.start_date }}">
-                      <label>Срок</label>
-                      <input type="date" name="due_date" value="{{ t.due_date }}">
-                      <label>Описание</label>
-                      <textarea name="description" rows="3">{{ t.description }}</textarea>
-                      <div class="btn-row">
-                        <button class="btn small primary" type="submit">Сохранить</button>
-                      </div>
-                    </form>
-                    <form method="post" action="{{ url_for('board_task_delete', tid=t.id) }}" style="margin-top:8px"
-                          onsubmit="return confirm('Удалить задачу?')">
-                      <button class="btn small danger" type="submit">Удалить</button>
-                    </form>
-                  </div>
-                </details>
               </div>
             </div>
             {% else %}
@@ -139,7 +108,8 @@
                 <span class="gcal-num">{{ d.num }}</span>
                 {% for tst in d.tasks[:4] %}
                   <span class="gcal-task {% if tst.overdue %}gcal-task-overdue{% endif %}"
-                        title="{{ tst.title }} · {{ tst.emp }} · {{ tst.start }} – {{ tst.due }}">
+                        title="{{ tst.title }} · {{ tst.emp }} · {{ tst.start }} – {{ tst.due }}"
+                        onclick="openCard({{ tst.id }})">
                     {{ tst.title }}{% if tst.emp %} ({{ tst.emp }}){% endif %}
                   </span>
                 {% endfor %}
@@ -157,8 +127,7 @@
         </tbody>
       </table>
       <div class="sub" style="margin-top:8px">
-        <span style="color:var(--danger)">■</span> просрочено ·
-        у задачи с исполнителем и датами
+        <span style="color:var(--danger)">■</span> просрочено
       </div>
     </div>
     {% else %}
@@ -168,13 +137,44 @@
 
 </div>
 
+<!-- ===================== ЗОНЫ АРХИВ / КОРЗИНА ===================== -->
+<div class="kb-zones">
+  <div class="kb-zone" data-zone="archive"
+       ondragover="event.preventDefault(); this.classList.add('drag-over')"
+       ondragleave="this.classList.remove('drag-over')"
+       ondrop="dropZone(event, 'archive')">
+    <span class="kb-zone-ico">🗄</span>
+    <span class="kb-zone-label">Архив · {{ archive_cnt }}</span>
+    <a class="btn btn-xs" href="{{ url_for('board_archive') }}">открыть</a>
+  </div>
+  <div class="kb-zone danger-zone" data-zone="trash"
+       ondragover="event.preventDefault(); this.classList.add('drag-over')"
+       ondragleave="this.classList.remove('drag-over')"
+       ondrop="dropZone(event, 'trash')">
+    <span class="kb-zone-ico">🗑</span>
+    <span class="kb-zone-label">Корзина · {{ trash_cnt }}</span>
+    <a class="btn btn-xs" href="{{ url_for('board_trash') }}">открыть</a>
+  </div>
+</div>
+
+<!-- модалка карточки -->
+<div class="modal-overlay" id="card-modal" onclick="if(event.target===this)closeCard();">
+  <div class="modal-card">
+    <div class="modal-head">
+      <span id="card-modal-title"></span>
+      <button class="modal-x" onclick="closeCard()" title="Закрыть">✕</button>
+    </div>
+    <div class="modal-body" id="card-modal-body"></div>
+  </div>
+</div>
+
 <script>
 /* Drag & drop карточек между столбцами канбана */
 let draggedId = null;
 function dragTask(ev) {
   draggedId = ev.currentTarget.dataset.id;
   ev.dataTransfer.effectAllowed = 'move';
-  ev.dataTransfer.setData('text/plain', draggedId);
+  ev.dataTransfer.setData('text/plain', ev.currentTarget.dataset.id);
   /* Кастомное привидение: копия ТОЛЬКО карточки, компактная и непрозрачная.
      По умолчанию браузер отрисовывает карточку во всю ширину столбца (flex),
      из-за чего при перетаскивании «ездит» весь столбец. */
@@ -185,12 +185,9 @@ function dragTask(ev) {
   ghost.style.top = '-1000px';
   ghost.style.left = '-1000px';
   ghost.style.width = '220px';
-  ghost.querySelectorAll('details, input, button').forEach(function (el) {
-    el.remove();
-  });
+  ghost.querySelectorAll('input, button').forEach(function (el) { el.remove(); });
   document.body.appendChild(ghost);
   ev.dataTransfer.setDragImage(ghost, 30, 20);
-  /* убрать клон из DOM после конца перетаскивания */
   requestAnimationFrame(function () { setTimeout(function () { ghost.remove(); }, 0); });
 }
 function dropTask(ev, colId) {
@@ -202,6 +199,32 @@ function dropTask(ev, colId) {
   fetch('/board/task/' + encodeURIComponent(draggedId) + '/move', { method: 'POST', body: fd })
     .then(function () { location.reload(); });
   draggedId = null;
+}
+function dropZone(ev, zone) {
+  ev.preventDefault();
+  ev.currentTarget.classList.remove('drag-over');
+  if (!draggedId) return;
+  var id = encodeURIComponent(draggedId);
+  var url = zone === 'archive' ? '/board/task/' + id + '/archive' : '/board/task/' + id + '/trash';
+  fetch(url, { method: 'POST' }).then(function () { location.reload(); });
+  draggedId = null;
+}
+
+/* Модалка карточки */
+function openCard(id) {
+  fetch('/board/task/' + encodeURIComponent(id) + '/card')
+    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
+    .then(function (html) {
+      document.getElementById('card-modal-body').innerHTML = html;
+      document.getElementById('card-modal').style.display = 'flex';
+      var inp = document.getElementById('card-modal-title');
+      if (inp) inp.textContent = '';
+    })
+    .catch(function () { alert('Не удалось открыть карточку'); });
+}
+function closeCard() {
+  document.getElementById('card-modal').style.display = 'none';
+  document.getElementById('card-modal-body').innerHTML = '';
 }
 </script>
 

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Корзина · TeamBook{% endblock %}
+{% block content %}
+
+<div class="toolbar">
+  <h2 style="margin:0">Корзина</h2>
+  <span class="sub">· {{ items|length }} зад. (чистится раз в месяц)</span>
+  <div class="spacer"></div>
+  <form method="post" action="{{ url_for('board_trash_clear') }}" style="display:inline;margin:0"
+        onsubmit="return confirm('Очистить корзину полностью? Действие необратимо.')">
+    <button class="btn small danger" type="submit">Очистить корзину</button>
+  </form>
+  <a class="btn" href="{{ url_for('board') }}">← К доске</a>
+</div>
+
+{% if items %}
+  {% for t in items %}
+  <div class="card" style="margin-bottom:12px">
+    <div class="toolbar" style="margin-bottom:6px">
+      <strong>{{ t.title }}</strong>
+      <span class="sub" style="font-size:12px">
+        {% if t.start_date or t.due_date %}· 📅 {{ t.start_date[5:] if t.start_date }}–{{ t.due_date[5:] if t.due_date }}{% endif %}
+        · в корзине с {{ (t.deleted_at or '')[:10] }}
+      </span>
+      <div class="spacer"></div>
+      <form method="post" action="{{ url_for('board_task_restore', tid=t.id) }}" style="display:inline;margin:0">
+        <button class="btn small" type="submit">↩ Восстановить</button>
+      </form>
+      <form method="post" action="{{ url_for('board_task_purge', tid=t.id) }}" style="display:inline;margin:0"
+            onsubmit="return confirm('Удалить задачу безвозвратно?')">
+        <button class="btn small danger" type="submit">Удалить навсегда</button>
+      </form>
+    </div>
+    {% if members.get(t.id) %}
+      <span class="emp">Исполнители: {{ members[t.id] | join(', ') }}</span>
+    {% endif %}
+  </div>
+  {% endfor %}
+{% else %}
+  <div class="card"><div class="empty">Корзина пуста.</div></div>
+{% endif %}
+
+{% endblock %}

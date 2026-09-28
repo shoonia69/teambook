@@ -396,31 +396,56 @@ c.post(f"/board/column/{cols[1]['id']}/rename", data={"name": "Сделано"},
 check("столбец переименован",
       len(dbq("SELECT * FROM kb_columns WHERE id=? AND name='Сделано'", (cols[1]["id"],))) == 1)
 
-# создать задачу в первом столбце с сотрудником и датами
+# создать задачу в первом столбце с двумя сотрудниками и датами
 emp_kb = dbq("SELECT id, name FROM employees WHERE active=1 LIMIT 1")[0]
+emp_kb2 = dbq("SELECT id, name FROM employees WHERE active=1 AND id!=? LIMIT 1",
+              (emp_kb["id"],))[0]
 c.post("/board/task/add", data={
     "title": "Задача А", "column_id": str(cols[0]["id"]),
-    "employee_id": str(emp_kb["id"]),
+    "employee_id": [str(emp_kb["id"]), str(emp_kb2["id"])],
     "start_date": "2026-10-01", "due_date": "2026-10-10",
     "description": "описание А",
 }, follow_redirects=True)
 tasks = dbq("SELECT * FROM kb_tasks WHERE title='Задача А'")
-check("задача создана с исполнителем и датами",
-      len(tasks) == 1 and tasks[0]["employee_id"] == emp_kb["id"]
-      and tasks[0]["start_date"] == "2026-10-01" and tasks[0]["due_date"] == "2026-10-10")
+mem = dbq("SELECT employee_id FROM kb_task_members WHERE task_id=?", (tasks[0]["id"],))
+check("задача создана с датами и двумя исполнителями",
+      len(tasks) == 1 and tasks[0]["start_date"] == "2026-10-01"
+      and tasks[0]["due_date"] == "2026-10-10"
+      and sorted(m["employee_id"] for m in mem) == sorted([emp_kb["id"], emp_kb2["id"]]))
 
 # добавить задачу без исполнителя/дат (только на канбане)
 c.post("/board/task/add", data={"title": "Задача Б", "column_id": str(cols[0]["id"])},
        follow_redirects=True)
+taskB = dbq("SELECT id FROM kb_tasks WHERE title='Задача Б'")[0]
 
 # страница рендерит карточки и гант-элементы
 r = c.get(f"/board?month=10&year=2026")
 h = r.get_data(as_text=True)
 check("канбан показывает карточку", "Задача А" in h and "Задача Б" in h)
+check("на карточке перечислены оба исполнителя",
+      "emp_kb" not in h and emp_kb["name"] in h and emp_kb2["name"] in h)
 check("гант-календарь отрисован (сетка месяца)",
       "gcal-table" in h and "Пн" in h and "gcal-cell" in h)
 check("в календарной сетке нет задачи без дат",
       "gcal-table" in h and "Задача Б" not in h.split("gcal-table")[1].split("</table>")[0])
+check("на странице есть зоны Архив и Корзина",
+      "kb-zone" in h and "Архив" in h and "Корзина" in h)
+
+# модалка карточки
+r = c.get(f"/board/task/{tasks[0]['id']}/card")
+hm = r.get_data(as_text=True)
+check("модалка карточки открывается с формой",
+      r.status_code == 200 and 'name="title"' in hm and 'checkbox' in hm
+      and 'tm-employee-list' in hm)
+import re as _re
+def _is_checked(html, eid):
+    # найди чекбокс исполнителя по value и проверь, есть ли атрибут checked
+    m = _re.search(r'<input[^>]*name="employee_id"[^>]*value="%d"[^>]*>' % eid, html)
+    return bool(m) and "checked" in m.group(0)
+check("в модалке отмечены оба исполнителя",
+      _is_checked(hm, emp_kb["id"]) and _is_checked(hm, emp_kb2["id"]))
+# поиск-фильтр присутствует
+check("в модалке есть поле поиска исполнителя", "tm-employee-search" in hm)
 
 # drag&drop: переместить задачу в другой столбец
 r = c.post(f"/board/task/{tasks[0]['id']}/move", data={"column_id": str(cols[1]["id"])})
@@ -428,29 +453,67 @@ check("перемещение задачи меняет столбец",
       r.status_code == 204 and dbq("SELECT column_id FROM kb_tasks WHERE id=?",
                                    (tasks[0]["id"],))[0]["column_id"] == cols[1]["id"])
 
-# редактирование задачи
+# редактирование задачи: сменить исполнителей на одного
 r = c.post(f"/board/task/{tasks[0]['id']}/edit", data={
     "title": "Задача А (ред)", "column_id": str(cols[0]["id"]),
-    "employee_id": str(emp_kb["id"]),
+    "employee_id": [str(emp_kb2["id"])],
     "start_date": "2026-11-02", "due_date": "2026-11-05", "description": "обновлено",
 }, follow_redirects=True)
-check("задача отредактирована",
+mem = dbq("SELECT employee_id FROM kb_task_members WHERE task_id=?", (tasks[0]["id"],))
+check("задача отредактирована, исполнитель один",
       len(dbq("SELECT * FROM kb_tasks WHERE id=? AND title='Задача А (ред)' AND due_date='2026-11-05'",
-              (tasks[0]["id"],))) == 1)
+              (tasks[0]["id"],))) == 1
+      and [m["employee_id"] for m in mem] == [emp_kb2["id"]])
 
 # удаление столбца с задачами запрещено
 r = c.post(f"/board/column/{cols[0]['id']}/delete", follow_redirects=True)
 check("столбец с задачами не удаляется",
       len(dbq("SELECT * FROM kb_columns WHERE id=?", (cols[0]["id"],))) == 1)
-# удалить задачи, потом столбец удаляется
-taskB = dbq("SELECT id FROM kb_tasks WHERE title='Задача Б'")
-if taskB:
-    c.post(f"/board/task/{taskB[0]['id']}/delete", follow_redirects=True)
-r = c.post(f"/board/task/{tasks[0]['id']}/delete", follow_redirects=True)
-r = c.post(f"/board/column/{cols[0]['id']}/delete", follow_redirects=True)
-check("задача удалена и пустой столбец удалён",
-      len(dbq("SELECT * FROM kb_tasks WHERE id=?", (tasks[0]["id"],))) == 0
-      and len(dbq("SELECT * FROM kb_columns WHERE id=?", (cols[0]["id"],))) == 0)
+# «удаление» = в корзину (soft delete), задача исчезает с доски но остаётся в БД
+r1 = c.post(f"/board/task/{taskB['id']}/trash")
+r2 = c.post(f"/board/task/{tasks[0]['id']}/trash")
+check("перетаскивание в корзину (soft delete)",
+      r1.status_code == 204 and r2.status_code == 204
+      and len(dbq("SELECT * FROM kb_tasks WHERE id=? AND deleted_at!=''",
+                  (taskB["id"],))) == 1)
+# доска после этого пустая в первом столбце
+r = c.get("/board")
+h = r.get_data(as_text=True)
+check("задачи убраны с доски в корзину",
+      "Задача А" not in h and "Задача Б" not in h and "Корзина" in h)
+# страница корзины
+r = c.get("/board/trash")
+h = r.get_data(as_text=True)
+check("корзина перечисляет удалённые", r.status_code == 200
+      and "Задача А" in h and "Задача Б" in h)
+# восстановление из корзины
+c.post(f"/board/task/{taskB['id']}/restore", follow_redirects=True)
+check("восстановление из корзины",
+      len(dbq("SELECT * FROM kb_tasks WHERE id=? AND deleted_at=''", (taskB["id"],))) == 1)
+# архив: перетащить задачу в архив, затем в архив-странице
+c.post(f"/board/task/{taskB['id']}/archive")
+check("перемещение в архив",
+      len(dbq("SELECT * FROM kb_tasks WHERE id=? AND archived_at!='' AND deleted_at=''",
+              (taskB["id"],))) == 1)
+r = c.get("/board/archive")
+h = r.get_data(as_text=True)
+check("архив-страница показывает задачу и кнопку возврата",
+      r.status_code == 200 and "Задача Б" in h and "Вернуть на доску" in h)
+# вернуть из архива
+c.post(f"/board/task/{taskB['id']}/restore", follow_redirects=True)
+check("возврат из архива",
+      len(dbq("SELECT * FROM kb_tasks WHERE id=? AND archived_at='' AND deleted_at=''",
+              (taskB["id"],))) == 1)
+# очистить корзину (purge-all безвозвратно удаляет оставшийся мусор)
+c.post("/board/trash/purge-all", follow_redirects=True)
+check("очистка корзины",
+      len(dbq("SELECT * FROM kb_tasks WHERE id=?", (tasks[0]["id"],))) == 0)
+# задача Б после restore снова активна — уводим её в корзину, чтобы столбец стал пустым
+c.post(f"/board/task/{taskB['id']}/trash")
+# пустой столбец удаляется
+c.post(f"/board/column/{cols[0]['id']}/delete", follow_redirects=True)
+check("пустой столбец удалён",
+      len(dbq("SELECT * FROM kb_columns WHERE id=?", (cols[0]["id"],))) == 0)
 
 print()
 if failures:

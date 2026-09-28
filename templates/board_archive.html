@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Архив заявок · TeamBook{% endblock %}
+{% block content %}
+
+<div class="toolbar">
+  <h2 style="margin:0">Архив заявок</h2>
+  <span class="sub">· {{ items|length }} зад.</span>
+  <div class="spacer"></div>
+  <a class="btn" href="{{ url_for('board') }}">← К доске</a>
+</div>
+
+{% if items %}
+  {% for t in items %}
+  <div class="card" style="margin-bottom:12px">
+    <div class="toolbar" style="margin-bottom:6px">
+      <strong>{{ t.title }}</strong>
+      <span class="sub" style="font-size:12px">
+        {% if t.start_date or t.due_date %}· 📅 {{ t.start_date[5:] if t.start_date }}–{{ t.due_date[5:] if t.due_date }}{% endif %}
+        · в архиве с {{ (t.archived_at or '')[:10] }}
+      </span>
+      <div class="spacer"></div>
+      <form method="post" action="{{ url_for('board_task_restore', tid=t.id) }}" style="display:inline;margin:0">
+        <button class="btn small" type="submit">↩ Вернуть на доску</button>
+      </form>
+      <form method="post" action="{{ url_for('board_task_trash', tid=t.id) }}" style="display:inline;margin:0">
+        <button class="btn small danger" type="submit">🗑 В корзину</button>
+      </form>
+    </div>
+    {% if t.description %}<div class="sub" style="white-space:pre-wrap;margin-bottom:6px">{{ t.description }}</div>{% endif %}
+    {% if members.get(t.id) %}
+      <span class="emp">Исполнители: {{ members[t.id] | join(', ') }}</span>
+    {% endif %}
+  </div>
+  {% endfor %}
+{% else %}
+  <div class="card"><div class="empty">Архив пуст. Перетащите карточку в зону «Архив» на доске.</div></div>
+{% endif %}
+
+{% endblock %}

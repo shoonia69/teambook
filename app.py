@@ -158,17 +158,25 @@ CREATE TABLE IF NOT EXISTS kb_columns (
     created_at  TEXT DEFAULT (datetime('now'))
 );
 
--- Задачи: исполнитель (employee, может быть пустым) + сроки для ганта.
+-- Задачи: исполнители (employee, может быть несколько) + сроки для ганта.
 CREATE TABLE IF NOT EXISTS kb_tasks (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     column_id    INTEGER REFERENCES kb_columns(id) ON DELETE SET NULL,
-    employee_id  INTEGER REFERENCES employees(id) ON DELETE SET NULL,
     title        TEXT NOT NULL DEFAULT '',
     description  TEXT DEFAULT '',
     start_date   TEXT DEFAULT '',   -- дата начала (ISO YYYY-MM-DD)
     due_date     TEXT DEFAULT '',   -- срок/дата окончания
+    archived_at  TEXT DEFAULT '',   -- не пусто = в архиве
+    deleted_at   TEXT DEFAULT '',   -- не пусто = в корзине
     created_at   TEXT DEFAULT (datetime('now')),
     updated_at   TEXT DEFAULT (datetime('now'))
+);
+
+-- Исполнители задачи (many-to-many: у задачи может быть несколько сотрудников)
+CREATE TABLE IF NOT EXISTS kb_task_members (
+    task_id     INTEGER NOT NULL REFERENCES kb_tasks(id) ON DELETE CASCADE,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    PRIMARY KEY (task_id, employee_id)
 );
 """
 
@@ -207,6 +215,32 @@ def init_db():
     # таблицы (meetings, year_records) -> employees_old, которые после DROP битые.
     _repair_dangling_fk(db, "meetings", "employee_id")
     _repair_dangling_fk(db, "year_records", "employee_id")
+
+    # Миграция канбана: колонки архива/корзины + many-to-many исполнители.
+    kb_cols = {r[1] for r in db.execute("PRAGMA table_info(kb_tasks)").fetchall()}
+    if "archived_at" not in kb_cols:
+        db.execute("ALTER TABLE kb_tasks ADD COLUMN archived_at TEXT DEFAULT ''")
+    if "deleted_at" not in kb_cols:
+        db.execute("ALTER TABLE kb_tasks ADD COLUMN deleted_at TEXT DEFAULT ''")
+    db.execute("""CREATE TABLE IF NOT EXISTS kb_task_members (
+        task_id     INTEGER NOT NULL REFERENCES kb_tasks(id) ON DELETE CASCADE,
+        employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+        PRIMARY KEY (task_id, employee_id)
+    )""")
+    # перенос старого единственного исполнителя (employee_id) в kb_task_members
+    if "employee_id" in kb_cols:
+        n = db.execute(
+            """INSERT OR IGNORE INTO kb_task_members (task_id, employee_id)
+               SELECT id, employee_id FROM kb_tasks
+               WHERE employee_id IS NOT NULL AND employee_id != 0"""
+        ).rowcount
+        if n:
+            print(f"[TeamBook] Миграция канбана: перенесено исполнителей -> {n}")
+        try:
+            # колонка employee_id больше не нужна (исполнители в kb_task_members)
+            db.execute("ALTER TABLE kb_tasks DROP COLUMN employee_id")
+        except Exception:
+            pass
 
     db.commit()
     db.close()
@@ -1393,42 +1427,63 @@ def report_employee(eid):
 # --------------------------------------------------------------------------- #
 # Канбан-доска и гант
 # --------------------------------------------------------------------------- #
+def _task_members_map(db):
+    """{task_id: [имена исполнителей]} — все задачи сразу."""
+    rows = db.execute(
+        """SELECT m.task_id, e.name
+           FROM kb_task_members m JOIN employees e ON e.id = m.employee_id
+           ORDER BY e.name COLLATE NOCASE""").fetchall()
+    out = {}
+    for r in rows:
+        out.setdefault(r["task_id"], []).append(r["name"])
+    return out
+
+
 def _board_ctx(db, month=None, year=None):
     """Общий контекст для доски: столбцы, задачи, сотрудники, гант-сетка.
 
-    Возвращает dict с колонками канбана (задачи по столбцам), списком активных
-    сотрудников и данными ганта на выбранный месяц.
+    Возвращает dict с колонками канбана (активные задачи по столбцам),
+    счётчиками архива/корзины, списком активных сотрудников и данными ганта
+    на выбранный месяц.
     """
+    # авточистка корзины: раз в месяц удаляем из неё задачи окончательно
+    _purge_stale_trash(db)
+
     columns = db.execute(
         "SELECT * FROM kb_columns ORDER BY sort_order, id").fetchall()
 
+    # только активные задачи (не в архиве и не в корзине)
     tasks = db.execute(
-        """SELECT t.*, e.name AS emp_name
-           FROM kb_tasks t
-           LEFT JOIN employees e ON e.id = t.employee_id
+        """SELECT t.* FROM kb_tasks t
+           WHERE t.archived_at = '' AND t.deleted_at = ''
            ORDER BY t.id DESC""").fetchall()
+    members = _task_members_map(db)
+
     col_tasks = {c["id"]: [] for c in columns}
-    col_tasks.setdefault(None, [])  # задачи без столбца (столбец удалён)
+    col_tasks.setdefault(None, [])
     for t in tasks:
         col_tasks.setdefault(t["column_id"], []).append(t)
-
-    # столбцы по порядку, но всегда с финальным «без столбца» для надёжности
     cols_view = list(columns) + [None]
 
     employees = db.execute(
         "SELECT id, name FROM employees WHERE active = 1 ORDER BY name COLLATE NOCASE"
     ).fetchall()
 
-# --- гант: календарная сетка месяца, задачи по дням ---
+    # счётчики архива и корзины
+    trash_cnt = db.execute(
+        "SELECT COUNT(*) c FROM kb_tasks WHERE deleted_at != ''").fetchone()["c"]
+    archive_cnt = db.execute(
+        "SELECT COUNT(*) c FROM kb_tasks WHERE archived_at != '' AND deleted_at = ''"
+    ).fetchone()["c"]
+
+    # --- гант: календарная сетка месяца, задачи по дням ---
     from calendar import monthrange, month_name as _mn
     now = datetime.now()
     month = month or now.month
     year = year or now.year
-    # нормализация месяца
     if month < 1: month, year = 12, year - 1
     if month > 12: month, year = 1, year + 1
     ndays = monthrange(year, month)[1]
-    # день недели 1-го числа (понедельник=0) для отступа календаря
     first_wd = monthrange(year, month)[0]
     def _iso(y, m, d):
         return f"{y:04d}-{m:02d}-{d:02d}"
@@ -1436,12 +1491,11 @@ def _board_ctx(db, month=None, year=None):
     mon_end = _iso(year, month, ndays)
     today_iso = now.strftime("%Y-%m-%d")
 
-    # задачи, попадающие в месяц (только с исполнителем и обеими датами)
+    # задачи на календарь: с датами (исполнитель не обязателен для отображения)
     gantt_tasks = [
-        t for t in tasks
-        if t["employee_id"] and t["start_date"] and t["due_date"]
+        t for t in tasks if t["start_date"] and t["due_date"]
     ]
-    tasks_by_day = {}  # iso -> список задач этого дня
+    tasks_by_day = {}
     for t in gantt_tasks:
         if t["due_date"] < mon_start or t["start_date"] > mon_end:
             continue
@@ -1449,20 +1503,20 @@ def _board_ctx(db, month=None, year=None):
         ee = min(t["due_date"], mon_end)
         d = datetime.strptime(ef, "%Y-%m-%d")
         de = datetime.strptime(ee, "%Y-%m-%d")
+        emp_names = members.get(t["id"], [])
         day = d
         while day <= de:
             iso = day.strftime("%Y-%m-%d")
             tasks_by_day.setdefault(iso, []).append({
                 "id": t["id"],
                 "title": t["title"],
-                "emp": t["emp_name"] or f"#{t['employee_id']}",
+                "emp": ", ".join(emp_names) or "—",
                 "overdue": t["due_date"] < today_iso,
                 "start": t["start_date"],
                 "due": t["due_date"],
             })
             day += timedelta(days=1)
 
-    # ячейки календаря (None — день вне месяца)
     cells = [None] * first_wd
     for d in range(1, ndays + 1):
         iso = _iso(year, month, d)
@@ -1481,7 +1535,10 @@ def _board_ctx(db, month=None, year=None):
         "col_tasks": col_tasks,
         "cols_view": cols_view,
         "employees": employees,
+        "members": members,
         "gantt_weeks": weeks,
+        "trash_cnt": trash_cnt,
+        "archive_cnt": archive_cnt,
         "gmonth": month,
         "gyear": year,
         "gmonth_name": _mn[month],
@@ -1489,6 +1546,14 @@ def _board_ctx(db, month=None, year=None):
         "gprev": (month - 1, year) if month > 1 else (12, year - 1),
         "today_iso": today_iso,
     }
+
+
+def _purge_stale_trash(db):
+    """Окончательно удаляет задачи из корзины старше 30 дней (раз в месяц)."""
+    month_ago = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
+    db.execute(
+        "DELETE FROM kb_tasks WHERE deleted_at != '' AND deleted_at < ?",
+        (month_ago,))
 
 
 @app.route("/board")
@@ -1541,7 +1606,7 @@ def board_column_rename(cid):
 @login_required
 def board_column_delete(cid):
     db = get_db()
-    cnt = db.execute("SELECT COUNT(*) c FROM kb_tasks WHERE column_id=?",
+    cnt = db.execute("SELECT COUNT(*) c FROM kb_tasks WHERE column_id=? AND deleted_at=''",
                      (cid,)).fetchone()["c"]
     if cnt:
         flash(f"Сначала перенесите или удалите задачи из «{cnt}» этого столбца", "error")
@@ -1550,6 +1615,15 @@ def board_column_delete(cid):
         db.commit()
         flash("Столбец удалён", "ok")
     return redirect(url_for("board"))
+
+
+def _parse_members(form_getlist):
+    """Список id исполнителей из формы (multi select / чекбоксов)."""
+    out = []
+    for v in form_getlist:
+        if str(v).strip().isdigit():
+            out.append(int(v))
+    return sorted(set(out))
 
 
 @app.route("/board/task/add", methods=["POST"])
@@ -1562,16 +1636,19 @@ def board_task_add():
     db = get_db()
     col = request.form.get("column_id", "").strip()
     column_id = int(col) if col.isdigit() else None
-    emp = request.form.get("employee_id", "").strip()
-    employee_id = int(emp) if emp.isdigit() else None
-    db.execute(
-        "INSERT INTO kb_tasks (title, column_id, employee_id, description, "
-        "start_date, due_date) VALUES (?,?,?,?,?,?)",
-        (title, column_id, employee_id,
+    cur = db.execute(
+        "INSERT INTO kb_tasks (title, column_id, description, start_date, due_date) "
+        "VALUES (?,?,?,?,?)",
+        (title, column_id,
          request.form.get("description", ""),
          request.form.get("start_date", ""),
          request.form.get("due_date", "")),
     )
+    tid = cur.lastrowid
+    for eid in _parse_members(request.form.getlist("employee_id")):
+        db.execute(
+            "INSERT OR IGNORE INTO kb_task_members (task_id, employee_id) VALUES (?,?)",
+            (tid, eid))
     db.commit()
     flash("Задача добавлена", "ok")
     return redirect(url_for("board"))
@@ -1590,27 +1667,54 @@ def board_task_edit(tid):
         return redirect(url_for("board"))
     col = request.form.get("column_id", "").strip()
     column_id = int(col) if col.isdigit() else None
-    emp = request.form.get("employee_id", "").strip()
-    employee_id = int(emp) if emp.isdigit() else None
     db.execute(
-        "UPDATE kb_tasks SET title=?, column_id=?, employee_id=?, description=?, "
+        "UPDATE kb_tasks SET title=?, column_id=?, description=?, "
         "start_date=?, due_date=?, updated_at=datetime('now') WHERE id=?",
-        (title, column_id, employee_id,
+        (title, column_id,
          request.form.get("description", ""),
          request.form.get("start_date", ""),
          request.form.get("due_date", ""), tid),
     )
+    # заменить список исполнителей
+    db.execute("DELETE FROM kb_task_members WHERE task_id=?", (tid,))
+    for eid in _parse_members(request.form.getlist("employee_id")):
+        db.execute(
+            "INSERT OR IGNORE INTO kb_task_members (task_id, employee_id) VALUES (?,?)",
+            (tid, eid))
     db.commit()
     flash("Задача обновлена", "ok")
     return redirect(url_for("board"))
 
 
+@app.route("/board/task/<int:tid>/card", methods=["GET"])
+@login_required
+def board_task_card(tid):
+    """Модалка карточки (Rendered фрагмент) — клик по карточке на доске."""
+    db = get_db()
+    t = db.execute("SELECT * FROM kb_tasks WHERE id=?", (tid,)).fetchone()
+    if not t or t["deleted_at"]:
+        abort(404)
+    employees = db.execute(
+        "SELECT id, name FROM employees WHERE active = 1 ORDER BY name COLLATE NOCASE"
+    ).fetchall()
+    columns = db.execute(
+        "SELECT * FROM kb_columns ORDER BY sort_order, id").fetchall()
+    selected = {r["employee_id"] for r in db.execute(
+        "SELECT employee_id FROM kb_task_members WHERE task_id=?", (tid,))}
+    return render_template(
+        "_task_modal.html",
+        t=t, employees=employees, columns=columns, selected=selected,
+        in_archive=bool(t["archived_at"]),
+    )
+
+
 @app.route("/board/task/<int:tid>/move", methods=["POST"])
 @login_required
 def board_task_move(tid):
-    """Drag&drop карточки: поменять столбец (статус) задачи."""
+    """Drag&drop карточки между столбцами канбана."""
     db = get_db()
-    if not db.execute("SELECT 1 FROM kb_tasks WHERE id=?", (tid,)).fetchone():
+    if not db.execute("SELECT 1 FROM kb_tasks WHERE id=? AND deleted_at=''",
+                      (tid,)).fetchone():
         abort(404)
     col = request.form.get("column_id", "").strip()
     column_id = int(col) if col.isdigit() else None
@@ -1620,14 +1724,93 @@ def board_task_move(tid):
     return "", 204
 
 
-@app.route("/board/task/<int:tid>/delete", methods=["POST"])
+@app.route("/board/task/<int:tid>/archive", methods=["POST"])
 @login_required
-def board_task_delete(tid):
+def board_task_archive(tid):
+    """Перетащили в архив."""
+    db = get_db()
+    db.execute(
+        "UPDATE kb_tasks SET archived_at=datetime('now'), deleted_at='', "
+        "updated_at=datetime('now') WHERE id=?",
+        (tid,))
+    db.commit()
+    return "", 204
+
+
+@app.route("/board/task/<int:tid>/trash", methods=["POST"])
+@login_required
+def board_task_trash(tid):
+    """Перетащили в корзину (мягкое удаление)."""
+    db = get_db()
+    db.execute(
+        "UPDATE kb_tasks SET deleted_at=datetime('now'), archived_at='', "
+        "updated_at=datetime('now') WHERE id=?",
+        (tid,))
+    db.commit()
+    return "", 204
+
+
+@app.route("/board/trash/purge-all", methods=["POST"])
+@login_required
+def board_trash_clear():
+    db = get_db()
+    db.execute("DELETE FROM kb_tasks WHERE deleted_at != ''")
+    db.commit()
+    flash("Корзина очищена", "ok")
+    return redirect(url_for("board_trash"))
+
+
+@app.route("/board/archive")
+@login_required
+def board_archive():
+    db = get_db()
+    items = db.execute(
+        """SELECT t.*, (SELECT COUNT(*) FROM kb_task_members m WHERE m.task_id=t.id) AS n
+           FROM kb_tasks t WHERE t.archived_at != '' AND t.deleted_at = ''
+           ORDER BY t.archived_at DESC, t.id DESC""").fetchall()
+    members = _task_members_map(db)
+    employees = db.execute(
+        "SELECT id, name FROM employees WHERE active = 1 ORDER BY name COLLATE NOCASE"
+    ).fetchall()
+    return render_template("board_archive.html", items=items, members=members,
+                           employees=employees)
+
+
+@app.route("/board/trash")
+@login_required
+def board_trash():
+    db = get_db()
+    items = db.execute(
+        """SELECT t.*, (SELECT COUNT(*) FROM kb_task_members m WHERE m.task_id=t.id) AS n
+           FROM kb_tasks t WHERE t.deleted_at != ''
+           ORDER BY t.deleted_at DESC, t.id DESC""").fetchall()
+    members = _task_members_map(db)
+    return render_template("board_trash.html", items=items, members=members)
+
+
+@app.route("/board/task/<int:tid>/restore", methods=["POST"])
+@login_required
+def board_task_restore(tid):
+    """Вернуть задачу из архива/корзины на доску."""
+    db = get_db()
+    db.execute(
+        "UPDATE kb_tasks SET archived_at='', deleted_at='', "
+        "updated_at=datetime('now') WHERE id=?",
+        (tid,))
+    db.commit()
+    flash("Задача возвращена", "ok")
+    return redirect(request.referrer or url_for("board"))
+
+
+@app.route("/board/task/<int:tid>/purge", methods=["POST"])
+@login_required
+def board_task_purge(tid):
+    """Окончательное удаление задачи (из корзины)."""
     db = get_db()
     db.execute("DELETE FROM kb_tasks WHERE id=?", (tid,))
     db.commit()
-    flash("Задача удалена", "ok")
-    return redirect(url_for("board"))
+    flash("Задача удалена безвозвратно", "ok")
+    return redirect(request.referrer or url_for("board"))
 
 
 # --------------------------------------------------------------------------- #
