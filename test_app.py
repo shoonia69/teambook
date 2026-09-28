@@ -462,17 +462,36 @@ check("перемещение задачи меняет столбец",
       r.status_code == 204 and dbq("SELECT column_id FROM kb_tasks WHERE id=?",
                                    (tasks[0]["id"],))[0]["column_id"] == work["id"])
 
-# drag&drop: задача из канбана в квадрант Эйзенхауэра
-emi1 = dbq("SELECT id, kind FROM kb_columns WHERE kind='emi1'")[0]
-r = c.post(f"/board/task/{tasks[0]['id']}/move", data={"column_id": str(emi1["id"])})
-check("перенос в квадрант Эйзенхауэра меняет столбец",
-      r.status_code == 204 and dbq("SELECT column_id FROM kb_tasks WHERE id=?",
-                                   (tasks[0]["id"],))[0]["column_id"] == emi1["id"])
+# задача из канбана без emi — в матрице в блоке «Ещё не распределены»
 r = c.get("/eisenhower")
 eh = r.get_data(as_text=True)
 check("страница Эйзенхауэра открывается", r.status_code == 200
       and "Матрица" in eh and "Срочно и важно" in eh)
-check("задача из канбана попала в квадрант", "Задача А" in eh)
+check("задачи канбана видны в матрице (не распределены)", "Ещё не распределены" in eh
+      and "Задача А" in eh)
+
+# drag&drop: перенос задачи в квадрант через /emi (не трогает колонку канбана)
+r = c.post(f"/board/task/{tasks[0]['id']}/emi", data={"emi": "emi1"})
+check("перенос в квадрант меняет поле emi",
+      r.status_code == 204 and dbq("SELECT emi FROM kb_tasks WHERE id=?",
+                                   (tasks[0]["id"],))[0]["emi"] == "emi1")
+# задача осталась в своей колонке канбана (column_id не тронут)
+check("колонка канбана не тронута переносом в квадрант",
+      dbq("SELECT column_id FROM kb_tasks WHERE id=?", (tasks[0]["id"],))[0]["column_id"] == work["id"])
+r = c.get("/eisenhower")
+eh = r.get_data(as_text=True)
+check("задача появилась в квадранте «Срочно и важно»", "Задача А" in eh)
+
+# создание задачи прямо в квадранте (форма матрицы передаёт emi)
+c.post("/board/task/add", data={"title": "Задача Матрица", "emi": "emi2"}, follow_redirects=True)
+tm = dbq("SELECT id, emi, column_id FROM kb_tasks WHERE title='Задача Матрица'")[0]
+backlog_id = dbq("SELECT id FROM kb_columns WHERE locked=1 AND kind='kanban'")[0]["id"]
+check("задача из матрицы в Бэклоге И с квадрантом emi2",
+      tm["emi"] == "emi2" and tm["column_id"] == backlog_id)
+r = c.get("/eisenhower")
+eh = r.get_data(as_text=True)
+check("задача, созданная в матрице, видна в своём квадранте",
+      "Задача Матрица" in eh)
 
 # редактирование задачи: сменить исполнителей на одного
 r = c.post(f"/board/task/{tasks[0]['id']}/edit", data={

@@ -387,3 +387,8 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
 .emi-cards { display: flex; flex-direction: column; gap: 8px; flex: 1; }
 .emi-cards .kb-card { width: 100%; }
 @media (max-width: 900px) { .emi-grid { grid-template-columns: 1fr; } }
+.emi-cell {
+  margin-top: 16px; border: 2px dashed var(--border); border-radius: 10px;
+  padding: 12px; background: var(--panel2);
+}
+.emi-cell .kb-card { width: 220px; flex: 0 1 auto; }

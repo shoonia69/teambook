@@ -163,6 +163,8 @@ CREATE TABLE IF NOT EXISTS kb_columns (
 );
 
 -- Задачи: исполнители (employee, может быть несколько) + сроки для ганта.
+-- emi = квадрант Эйзенхауэра ('emi1'..'emi4', '' = не распределён).
+-- Квадрант НЕ связан с column_id: задача одновременно в колонке канбана и в матрице.
 CREATE TABLE IF NOT EXISTS kb_tasks (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     column_id    INTEGER REFERENCES kb_columns(id) ON DELETE SET NULL,
@@ -170,6 +172,7 @@ CREATE TABLE IF NOT EXISTS kb_tasks (
     description  TEXT DEFAULT '',
     start_date   TEXT DEFAULT '',   -- дата начала (ISO YYYY-MM-DD)
     due_date     TEXT DEFAULT '',   -- срок/дата окончания
+    emi          TEXT DEFAULT '',   -- квадрант Эйзенхауэра
     archived_at  TEXT DEFAULT '',   -- не пусто = в архиве
     deleted_at   TEXT DEFAULT '',   -- не пусто = в корзине
     created_at   TEXT DEFAULT (datetime('now')),
@@ -226,6 +229,10 @@ def init_db():
         db.execute("ALTER TABLE kb_tasks ADD COLUMN archived_at TEXT DEFAULT ''")
     if "deleted_at" not in kb_cols:
         db.execute("ALTER TABLE kb_tasks ADD COLUMN deleted_at TEXT DEFAULT ''")
+    # поле квадранта Эйзенхауэра (независимое от column_id)
+    if "emi" not in kb_cols:
+        db.execute("ALTER TABLE kb_tasks ADD COLUMN emi TEXT DEFAULT ''")
+        print("[TeamBook] Миграция канбана: добавлена колонка emi (Эйзенхауэр)")
     db.execute("""CREATE TABLE IF NOT EXISTS kb_task_members (
         task_id     INTEGER NOT NULL REFERENCES kb_tasks(id) ON DELETE CASCADE,
         employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
@@ -246,7 +253,7 @@ def init_db():
         except Exception:
             pass
 
-    # --- Эйзенхауэр: системные столбцы (Бэклог + 4 квадранта) ---
+    # --- Системный столбец Бэклог (для всех новых заявок) ---
     kcols = {r[1] for r in db.execute("PRAGMA table_info(kb_columns)").fetchall()}
     if "kind" not in kcols:
         db.execute("ALTER TABLE kb_columns ADD COLUMN kind TEXT NOT NULL DEFAULT 'kanban'")
@@ -256,7 +263,6 @@ def init_db():
     def _ensure_sys_column(kind, name, sort_order):
         row = db.execute("SELECT id FROM kb_columns WHERE kind=? LIMIT 1", (kind,)).fetchone()
         if row:
-            # зафиксируем порядок и статус системного столбца
             db.execute("UPDATE kb_columns SET locked=1, name=?, sort_order=? WHERE id=?",
                        (name, sort_order, row["id"]))
             return row["id"]
@@ -266,10 +272,17 @@ def init_db():
         return cur.lastrowid
 
     backlog_id = _ensure_sys_column("kanban", "📥 Бэклог", -100)
-    _ensure_sys_column("emi1", "Срочно и важно", 1)
-    _ensure_sys_column("emi2", "Важно, не срочно", 2)
-    _ensure_sys_column("emi3", "Срочно, не важно", 3)
-    _ensure_sys_column("emi4", "Не важно, не срочно", 4)
+
+    # Старая модель Эйзенхауэра: квадранты были колонками (kind='emi1'..'emi4').
+    # Теперь квадрант — независимое поле задачи (kb_tasks.emi), а колонки не нужны.
+    # Переносим их задачи в Бэклог (с установкой emi) и конвертируем столбцы в обычные.
+    emi_cols = db.execute("SELECT id, kind FROM kb_columns WHERE kind LIKE 'emi%'").fetchall()
+    for ec in emi_cols:
+        n = db.execute("UPDATE kb_tasks SET column_id=?, emi=? "
+                       "WHERE column_id=? AND emi=''", (backlog_id, ec["kind"], ec["id"]))
+        # конвертируем бывший квадрант в обычный (несистемный) столбец канбана
+        db.execute("UPDATE kb_columns SET kind='kanban', locked=0 WHERE id=?",
+                   (ec["id"],))
 
     # задачи без столбца (например, из старой схемы) -> в Бэклог
     db.execute("UPDATE kb_tasks SET column_id=? WHERE column_id IS NULL",
@@ -1583,27 +1596,44 @@ def _board_ctx(db, month=None, year=None):
     }
 
 
+# Квадранты Эйзенхауэра (порядок = условная сетка 2×2: важность×срочность).
+_EISENHOWER = [
+    {"key": "emi1", "name": "Срочно и важно"},
+    {"key": "emi2", "name": "Важно, не срочно"},
+    {"key": "emi3", "name": "Срочно, не важно"},
+    {"key": "emi4", "name": "Не важно, не срочно"},
+]
+
+
 def _eisenhower_ctx(db):
-    """Контекст Эйзенхауэра: 4 квадранта (kind='emi1'..'emi4') с задачами."""
+    """Контекст Эйзенхауэра: 4 квадранта, куда задачи раскладываются полем emi.
+
+    Квадрант — НЕЗАВИСИМЫЙ признак задачи (kb_tasks.emi = 'emi1'..'emi4' или пусто),
+    он не связан с колонкой канбана. Поэтому одна и та же задача видна
+    и в своей колонке на /board, и в квадранте здесь. Задачи без emi попадают
+    в блок «Ещё не распределены».
+    """
     _purge_stale_trash(db)
-    quads = db.execute(
-        "SELECT * FROM kb_columns WHERE kind LIKE 'emi%' ORDER BY sort_order, id"
-    ).fetchall()
+    quads = _EISENHOWER  # список dict: {'key': 'emi1', 'name': 'Срочно и важно', ...}
     tasks = db.execute(
         """SELECT t.* FROM kb_tasks t
-           INNER JOIN kb_columns c ON c.id = t.column_id
-           WHERE t.archived_at = '' AND t.deleted_at = '' AND c.kind LIKE 'emi%'
+           WHERE t.archived_at = '' AND t.deleted_at = ''
            ORDER BY t.id DESC""").fetchall()
     members = _task_members_map(db)
-    quad_tasks = {q["id"]: [] for q in quads}
+    quad_tasks = {q["key"]: [] for q in quads}
+    unassigned = []
     for t in tasks:
-        quad_tasks.setdefault(t["column_id"], []).append(t)
+        if t["emi"] in quad_tasks:
+            quad_tasks[t["emi"]].append(t)
+        else:
+            unassigned.append(t)
     employees = db.execute(
         "SELECT id, name FROM employees WHERE active = 1 ORDER BY name COLLATE NOCASE"
     ).fetchall()
     return {
         "quads": quads,
         "quad_tasks": quad_tasks,
+        "unassigned": unassigned,
         "employees": employees,
         "members": members,
     }
@@ -1720,13 +1750,14 @@ def board_task_add():
     ).fetchone()
     column_id = backlog["id"] if backlog else None
     cur = db.execute(
-        "INSERT INTO kb_tasks (title, column_id, description, start_date, due_date) "
-        "VALUES (?,?,?,?,?)",
-        (title, column_id,
-         request.form.get("description", ""),
-         request.form.get("start_date", ""),
-         request.form.get("due_date", "")),
-    )
+            "INSERT INTO kb_tasks (title, column_id, description, start_date, due_date, emi) "
+            "VALUES (?,?,?,?,?,?)",
+            (title, column_id,
+             request.form.get("description", ""),
+             request.form.get("start_date", ""),
+             request.form.get("due_date", ""),
+             request.form.get("emi", "")),
+        )
     tid = cur.lastrowid
     for eid in _parse_members(request.form.getlist("employee_id")):
         db.execute(
@@ -1752,11 +1783,12 @@ def board_task_edit(tid):
     column_id = int(col) if col.isdigit() else None
     db.execute(
         "UPDATE kb_tasks SET title=?, column_id=?, description=?, "
-        "start_date=?, due_date=?, updated_at=datetime('now') WHERE id=?",
+        "start_date=?, due_date=?, emi=?, updated_at=datetime('now') WHERE id=?",
         (title, column_id,
          request.form.get("description", ""),
          request.form.get("start_date", ""),
-         request.form.get("due_date", ""), tid),
+         request.form.get("due_date", ""),
+         request.form.get("emi", ""), tid),
     )
     # заменить список исполнителей
     db.execute("DELETE FROM kb_task_members WHERE task_id=?", (tid,))
@@ -1787,6 +1819,7 @@ def board_task_card(tid):
     return render_template(
         "_task_modal.html",
         t=t, employees=employees, columns=columns, selected=selected,
+        quads=_EISENHOWER,
         in_archive=bool(t["archived_at"]),
     )
 
@@ -1803,6 +1836,28 @@ def board_task_move(tid):
     column_id = int(col) if col.isdigit() else None
     db.execute("UPDATE kb_tasks SET column_id=?, updated_at=datetime('now') WHERE id=?",
                (column_id, tid))
+    db.commit()
+    return "", 204
+
+
+@app.route("/board/task/<int:tid>/emi", methods=["POST"])
+@login_required
+def board_task_emi(tid):
+    """Drag&drop карточки между квадрантами Эйзенхауэра (меняет поле emi).
+
+    Квадрант — независимый признак задачи, не трогаем её column_id.
+    Пустой emi = «Ещё не распределены».
+    """
+    db = get_db()
+    if not db.execute("SELECT 1 FROM kb_tasks WHERE id=? AND deleted_at=''",
+                      (tid,)).fetchone():
+        abort(404)
+    emi = request.form.get("emi", "").strip()
+    valid = {q["key"] for q in _EISENHOWER}
+    if emi not in valid:
+        emi = ""
+    db.execute("UPDATE kb_tasks SET emi=?, updated_at=datetime('now') WHERE id=?",
+               (emi, tid))
     db.commit()
     return "", 204
 

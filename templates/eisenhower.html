@@ -4,18 +4,18 @@
 
 <div class="toolbar">
   <h2 style="margin:0">Матрица Эйзенхауэра</h2>
-  <span class="sub">· важность × срочность · задачи с канбана, переносимые в квадранты</span>
+  <span class="sub">· важность × срочность · задачи видны и на доске, и в квадранте</span>
   <div class="spacer"></div>
   <a class="btn" href="{{ url_for('board') }}">← К доске</a>
 </div>
 
 <div class="emi-grid">
   {% for q in quads %}
-    {% set tasks = quad_tasks.get(q.id, []) %}
-    <div class="emi-quad emi-{{ q.kind }}"
+    {% set tasks = quad_tasks.get(q.key, []) %}
+    <div class="emi-quad emi-{{ q.key }}"
          ondragover="event.preventDefault(); this.classList.add('drag-over')"
          ondragleave="this.classList.remove('drag-over')"
-         ondrop="dropEmi(event, {{ q.id }})">
+         ondrop="dropEmi(event, '{{ q.key }}')">
       <div class="emi-head">{{ q.name }} <span class="kb-count">{{ tasks|length }}</span></div>
       <div class="emi-cards">
         {% for t in tasks %}
@@ -38,13 +38,32 @@
         {% endfor %}
       </div>
       <form method="post" action="{{ url_for('board_task_add') }}" class="kb-add-task">
-        <input type="hidden" name="column_id" value="{{ q.id }}">
-        <input type="text" name="title" placeholder="+ задача... (в Бэклог)" required>
+        <input type="hidden" name="emi" value="{{ q.key }}">
+        <input type="text" name="title" placeholder="+ задача в этот квадрант..." required>
         <button class="btn small" type="submit">+</button>
       </form>
     </div>
   {% endfor %}
 </div>
+{% if unassigned %}
+<div class="emi-cell">
+  <div class="panel-title">Ещё не распределены ({{ unassigned|length }})
+    <span class="sub">— пока не выбрали квадрант</span></div>
+  <div class="emi-cards" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">
+    {% for t in unassigned %}
+      <div class="kb-card" draggable="true" ondragstart="dragTask(event)"
+           onclick="openCard({{ t.id }})" data-id="{{ t.id }}" title="Клик — открыть">
+        <div class="kb-card-title">{{ t.title }}</div>
+        {% if t.description %}<div class="kb-card-desc">{{ t.description }}</div>{% endif %}
+        <div class="kb-card-meta" style="font-size:11px">
+          {% set who = members.get(t.id, []) %}
+          {% if who %}<span class="emp">👤 {{ who | join(', ') }}</span>{% endif %}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
 
 <div class="kb-zones">
   <div class="kb-zone" data-zone="archive"
@@ -89,13 +108,13 @@ function dragTask(ev) {
   ev.dataTransfer.setDragImage(ghost, 30, 20);
   requestAnimationFrame(function () { setTimeout(function () { ghost.remove(); }, 0); });
 }
-function dropEmi(ev, colId) {
+function dropEmi(ev, emiKey) {
   ev.preventDefault();
   ev.currentTarget.classList.remove('drag-over');
   if (!draggedId) return;
   var fd = new FormData();
-  fd.append('column_id', colId);
-  fetch('/board/task/' + encodeURIComponent(draggedId) + '/move', { method: 'POST', body: fd })
+  fd.append('emi', emiKey);
+  fetch('/board/task/' + encodeURIComponent(draggedId) + '/emi', { method: 'POST', body: fd })
     .then(function () { location.reload(); });
   draggedId = null;
 }
