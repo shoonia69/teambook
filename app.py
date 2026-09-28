@@ -2157,20 +2157,8 @@ def todo_page():
     return render_template(
         "todo.html", backlog=backlog, quadrants=QUADRANTS,
         quad_tasks=quad_tasks, archive=archive, today_s=today_s,
-        all_tags=tags, templates=TODO_TEMPLATES)
+        all_tags=tags)
 
-
-# Шаблоны быстрых задач (одним кликом в бэклог)
-TODO_TEMPLATES = [
-    "провести 1-1 с …",
-    "подготовить отзыв о …",
-    "обновить описание роли …",
-    "посмотреть серверную",
-    "премирование: …",
-    "доступ в гит для …",
-    "ключи/доступы для …",
-    "созвон с командой",
-]
 
 # Квадранты Эйзенхауэра в личном todo (важно × срочно)
 QUADRANTS = [

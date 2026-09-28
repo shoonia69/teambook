@@ -727,8 +727,8 @@ r = c.get("/todo"); h = r.get_data(as_text=True)
 check("todo: срок и тег видны на карточке и в фильтре",
       "06-15" in h and "todo-tag" in h
       and 'id="todoSearch"' in h and 'id="todoTagFilter"' in h)
-check("todo: шаблоны быстрых задач на странице",
-      'onclick="applyTpl(' in h and "Быстрое добавление" in h)
+check("todo: шаблоны быстрых задач убраны",
+      "applyTpl" not in h and "Быстрое добавление" not in h)
 r = c.get("/todo/archive?date=2030-06-15")
 check("todo: архив принимает выбранную дату", r.status_code == 200)
 # счётчик в навигации = число невыполненных задач (на странице todo через base)

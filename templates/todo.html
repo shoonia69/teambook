@@ -32,14 +32,6 @@
       <input type="text" name="title" id="todoNewTitle" placeholder="Новая задача (попадёт в бэклог)..." autocomplete="off" required style="flex:1">
       <button class="btn small primary" type="submit">+</button>
     </form>
-    {% if templates %}
-    <div class="todo-tpl">
-      <span class="sub" style="font-size:12px;margin-right:6px">Быстрое добавление:</span>
-      {% for tpl in templates %}
-        <button type="button" class="btn btn-xs" onclick="applyTpl(this)" title="{{ tpl }}">{{ tpl }}</button>
-      {% endfor %}
-    </div>
-    {% endif %}
     {% if backlog %}
     <div class="todo-list">
       {% for t in backlog %}
@@ -164,11 +156,6 @@ function closeTodo() {
   document.getElementById('todo-modal-body').innerHTML = '';
 }
 
-/* Быстрое добавление из шаблона: подставить в поле и сфокусироваться */
-function applyTpl(btn) {
-  var inp = document.getElementById('todoNewTitle');
-  if (inp) { inp.value = btn.getAttribute('title'); inp.focus(); }
-}
 
 /* Поиск по названию + фильтр по тегу (бэклог и квадранты) */
 function todoApplyFilter() {
