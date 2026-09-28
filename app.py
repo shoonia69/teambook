@@ -406,14 +406,14 @@ def login_required(f):
 # Уведомления (шапка: выпадающее окно со счётчиком)
 # --------------------------------------------------------------------------- #
 def _notifications(db):
-    """Активные задачи со сроком ≤ сегодня — кандидаты на уведомления.
+    """Активные задачи со сроком до сегодня+3 дней — кандидаты на уведомления.
 
     Возвращает dict: {overdue: [...], soon: [...], total: int}.
-    overdue — срок уже вышел; soon — срок сегодня/завтра.
+    overdue — срок уже вышел; soon — срок сегодня/завтра/+3 дня.
     """
     today = date.today()
     today_s = today.isoformat()
-    tomorrow_s = (today + timedelta(days=1)).isoformat()
+    horizon = (today + timedelta(days=3)).isoformat()
     rows = db.execute(
         """SELECT t.id, t.title, t.due_date, t.archived_at, t.deleted_at, c.name AS col_name
            FROM kb_tasks t
@@ -421,7 +421,7 @@ def _notifications(db):
            WHERE t.archived_at = '' AND t.deleted_at = ''
              AND t.due_date != '' AND t.due_date <= ?
            ORDER BY t.due_date ASC""",
-        (tomorrow_s,),
+        (horizon,),
     ).fetchall()
     members = _task_members_map(db)
     overdue, soon = [], []
@@ -429,7 +429,7 @@ def _notifications(db):
         item = {
             "id": r["id"], "title": r["title"],
             "due_date": r["due_date"], "col_name": r["col_name"] or "Бэклог",
-            "emp": ", ".join(members.get(r["id"], [])),
+            "emp": ", ".join(m["name"] for m in members.get(r["id"], [])),
         }
         if r["due_date"] < today_s:
             overdue.append(item)
@@ -452,7 +452,10 @@ def _inject_notifications():
             n = db.execute("SELECT COUNT(*) AS c FROM problems").fetchone()["c"]
         except Exception:
             n = 0
-        return {"notifications": _notifications(db), "problems_count": n}
+        notif = _notifications(db)
+        board_overdue = len(notif["overdue"])
+        return {"notifications": notif, "problems_count": n,
+                "board_overdue": board_overdue}
     except Exception:
         return {"notifications": None}
 
@@ -528,6 +531,27 @@ def index():
         employees = [e for e in employees
                      if ql in e["name"].lower().replace("ё", "е")]
 
+    # --- сводка «цифры недели» (главная, над таблицей сотрудников) ---
+    today_iso = date.today().isoformat()
+    open_tasks = db.execute(
+        "SELECT COUNT(*) c FROM kb_tasks WHERE archived_at = '' AND deleted_at = ''").fetchone()["c"]
+    overdue_tasks = db.execute(
+        "SELECT COUNT(*) c FROM kb_tasks "
+        "WHERE archived_at = '' AND deleted_at = '' AND due_date != '' AND due_date < ?",
+        (today_iso,)).fetchone()["c"]
+    problems_count = db.execute("SELECT COUNT(*) c FROM problems").fetchone()["c"]
+    this_year = datetime.now().year
+    records_count = db.execute(
+        "SELECT COUNT(*) c FROM year_records WHERE year = ?",
+        (this_year,)).fetchone()["c"]
+    stats = {
+        "open_tasks": open_tasks,
+        "overdue_tasks": overdue_tasks,
+        "problems": problems_count,
+        "records": records_count,
+        "year": this_year,
+    }
+
     return render_template(
         "index.html",
         employees=employees,
@@ -537,6 +561,7 @@ def index():
         sel_position=position,
         sel_q=q,
         now_year=datetime.now().year,
+        stats=stats,
     )
 
 
@@ -1525,14 +1550,17 @@ def report_employee(eid):
 # Канбан-доска и гант
 # --------------------------------------------------------------------------- #
 def _task_members_map(db):
-    """{task_id: [имена исполнителей]} — все задачи сразу."""
+    """{task_id: [{'id','name','dept'}]} — все исполнители задач (с отделом)."""
     rows = db.execute(
-        """SELECT m.task_id, e.name
-           FROM kb_task_members m JOIN employees e ON e.id = m.employee_id
+        """SELECT m.task_id, e.id AS eid, e.name, d.name AS dept
+           FROM kb_task_members m
+           JOIN employees e ON e.id = m.employee_id
+           LEFT JOIN departments d ON d.id = e.department_id
            ORDER BY e.name COLLATE NOCASE""").fetchall()
     out = {}
     for r in rows:
-        out.setdefault(r["task_id"], []).append(r["name"])
+        out.setdefault(r["task_id"], []).append({
+            "id": r["eid"], "name": r["name"], "dept": r["dept"] or None})
     return out
 
 
@@ -1558,9 +1586,17 @@ def _board_ctx(db, month=None, year=None):
            ORDER BY t.id DESC""").fetchall()
     members = _task_members_map(db)
 
+    # сегодняшняя дата для подсветки/сортировки задач по сроку
+    today_s = datetime.now().strftime("%Y-%m-%d")
     col_tasks = {c["id"]: [] for c in columns}
     for t in tasks:
         col_tasks.setdefault(t["column_id"], []).append(t)
+    # сортировка задач внутри столбца: просроченные первыми, затем по сроку (без срока — в конец)
+    def _sort_key(t):
+        due = t["due_date"] or "9999-12-31"
+        return (0 if t["due_date"] and t["due_date"] < today_s else 1, due)
+    for cid in col_tasks:
+        col_tasks[cid].sort(key=_sort_key)
     cols_view = list(columns)
 
     employees = db.execute(
@@ -1601,14 +1637,14 @@ def _board_ctx(db, month=None, year=None):
         ee = min(t["due_date"], mon_end)
         d = datetime.strptime(ef, "%Y-%m-%d")
         de = datetime.strptime(ee, "%Y-%m-%d")
-        emp_names = members.get(t["id"], [])
+        emp_names = ", ".join(m["name"] for m in members.get(t["id"], []))
         day = d
         while day <= de:
             iso = day.strftime("%Y-%m-%d")
             tasks_by_day.setdefault(iso, []).append({
                 "id": t["id"],
                 "title": t["title"],
-                "emp": ", ".join(emp_names) or "—",
+                "emp": emp_names or "—",
                 "overdue": t["due_date"] < today_iso,
                 "start": t["start_date"],
                 "due": t["due_date"],

@@ -14,8 +14,29 @@
     <button class="btn small primary" type="submit">⬇ Отчёт</button>
   </form>
   <div class="spacer"></div>
-  <a class="btn primary" href="{{ url_for('employee_new') }}">+ Добавить сотрудника</a>
-</div>
+    <a class="btn primary" href="{{ url_for('employee_new') }}">+ Добавить сотрудника</a>
+  </div>
+
+  {% if stats %}
+  <div class="stats-row">
+    <a class="stat-card" href="{{ url_for('board') }}">
+      <span class="stat-num">{{ stats.open_tasks }}</span>
+      <span class="stat-label">открытых задач</span>
+    </a>
+    <a class="stat-card {% if stats.overdue_tasks %}warn{% endif %}" href="{{ url_for('board') }}">
+      <span class="stat-num">{{ stats.overdue_tasks }}</span>
+      <span class="stat-label">просрочено</span>
+    </a>
+    <a class="stat-card {% if stats.problems %}warn{% endif %}" href="{{ url_for('problems_page') }}">
+      <span class="stat-num">{{ stats.problems }}</span>
+      <span class="stat-label">проблем</span>
+    </a>
+    <span class="stat-card">
+      <span class="stat-num">{{ stats.records }}</span>
+      <span class="stat-label">записей за {{ stats.year }} г.</span>
+    </span>
+  </div>
+  {% endif %}
 
 <!-- Поиск по имени/фамилии -->
 <div class="card filter-panel">

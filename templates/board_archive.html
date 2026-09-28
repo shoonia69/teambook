@@ -28,7 +28,7 @@
     </div>
     {% if t.description %}<div class="sub" style="white-space:pre-wrap;margin-bottom:6px">{{ t.description }}</div>{% endif %}
     {% if members.get(t.id) %}
-      <span class="emp">Исполнители: {{ members[t.id] | join(', ') }}</span>
+      <span class="emp">Исполнители: {{ members[t.id] | map(attribute='name') | join(', ') }}</span>
     {% endif %}
   </div>
   {% endfor %}

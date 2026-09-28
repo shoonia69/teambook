@@ -24,11 +24,21 @@
       </form>
     </div>
 
-    <div class="kb-row">
-      <!-- столбцы (создаваемые руководителем; Бэклог и квадранты — системные) -->
+    <div class="kb-filter-bar">
+      <input type="text" id="kbSearch" placeholder="🔍 Поиск по задачам..." oninput="kbApplyFilters()">
+      <select id="kbEmpFilter" onchange="kbApplyFilters()">
+        <option value="">Все исполнители</option>
+        {% for e in employees %}<option value="{{ e.name }}">{{ e.name }}</option>{% endfor %}
+      </select>
+      <label class="kb-chk"><input type="checkbox" id="kbOverdueOnly" onchange="kbApplyFilters()"> только просроченные</label>
+      <label class="kb-chk"><input type="checkbox" id="kbNoEmpOnly" onchange="kbApplyFilters()"> без исполнителя</label>
+    </div>
+
+    {% if cols_view %}
+    <div class="kb-row" id="kbRow">
+      <!-- столбцы (создаваемые руководителем; Бэклог — системный) -->
       {% for col in cols_view %}
-        {% set tasks = col_tasks.get(col.id if col else None, []) %}
-        {% if col %}
+        {% set tasks = col_tasks.get(col.id, []) %}
         <div class="kb-col" data-colid="{{ col.id }}"
              ondragover="event.preventDefault(); this.classList.add('drag-over')"
              ondragleave="this.classList.remove('drag-over')"
@@ -52,19 +62,33 @@
 
           <div class="kb-col-cards">
             {% for t in tasks %}
-            <div class="kb-card" draggable="true"
+            {% set who = members.get(t.id, []) %}
+            {% set is_overdue = t.due_date and t.due_date < today_iso %}
+            {% set is_noemp = who|length == 0 %}
+            <div class="kb-card {% if is_overdue %}ov{% endif %}"  draggable="true"
                  ondragstart="dragTask(event)"
                  onclick="openCard({{ t.id }})"
-                 data-id="{{ t.id }}" title="Клик — открыть">
-              <div class="kb-card-title">{{ t.title }}</div>
+                 data-id="{{ t.id }}"
+                 data-title="{{ (t.title ~ ((' ' ~ t.description) if t.description else ''))|lower }}"
+                 data-emp="{% for m in who %}{{ m.name|lower }} {% endfor %}"
+                 data-overdue="{{ 1 if is_overdue else 0 }}" data-noemp="{{ 1 if is_noemp else 0 }}"
+                 title="Клик — открыть">
+              <div class="kb-card-title">{{ t.title }}{% if is_overdue %}<span class="kb-ov-badge">срок вышел</span>{% endif %}</div>
               {% if t.description %}<div class="kb-card-desc">{{ t.description }}</div>{% endif %}
               <div class="kb-card-meta">
-                {% set who = members.get(t.id, []) %}
                 {% if who %}
-                  <span class="emp" title="Исполнители">👤 {{ who | join(', ') }}</span>
+                  <div class="kb-chips">
+                  {% for m in who %}
+                    <span class="kb-chip" style="--kb-c:{% if m.dept %}var(--accent){% else %}var(--muted){% endif %}" title="{{ m.name }}{% if m.dept %} · {{ m.dept }}{% endif %}">{{ m.name }}</span>
+                  {% endfor %}
+                  </div>
+                {% else %}
+                  <span class="emp kb-noemp" title="Нет исполнителя">👤 —</span>
                 {% endif %}
                 {% if t.start_date or t.due_date %}
-                  <span class="dates" title="Сроки">📅 {% if t.start_date %}{{ t.start_date[5:] }}{% endif %}–{% if t.due_date %}{{ t.due_date[5:] }}{% endif %}</span>
+                  <span class="dates {% if is_overdue %}over{% endif %}" title="Сроки">
+                    📅 {% if t.start_date %}{{ t.start_date[5:] }}{% endif %}–{% if t.due_date %}{{ t.due_date[5:] }}{% endif %}
+                  </span>
                 {% endif %}
               </div>
             </div>
@@ -73,9 +97,13 @@
             {% endfor %}
           </div>
         </div>
-        {% endif %}
       {% endfor %}
     </div>
+    {% else %}
+    <div class="card"><div class="empty">
+      Доска пока пуста — создайте первый столбец («+ Столбец») или добавьте задачу в 📥 Бэклог.
+    </div></div>
+    {% endif %}
   </section>
 
   <!-- ===================== ГАНТ ===================== -->
@@ -238,6 +266,35 @@ function tmFilterEmployees(inp) {
   });
   var none = document.getElementById('tm-no-match');
   if (none) none.style.display = shown ? 'none' : '';
+}
+
+/* Фильтрация карточек на доске: поиск по тексту, исполнителю, просроченные, без исполнителя */
+function kbApplyFilters() {
+  var q = (document.getElementById('kbSearch').value || '').trim().toLowerCase();
+  var emp = (document.getElementById('kbEmpFilter').value || '').trim().toLowerCase();
+  var overOnly = document.getElementById('kbOverdueOnly').checked;
+  var noEmpOnly = document.getElementById('kbNoEmpOnly').checked;
+  var empty = document.getElementById('kbFilterEmpty');
+  var shown = 0;
+  document.querySelectorAll('#kbRow .kb-col').forEach(function (col) {
+    var colShown = 0;
+    var cards = col.querySelectorAll('.kb-card');
+    cards.forEach(function (card) {
+      var ok = true;
+      if (q) {
+        var hay = (card.dataset.title || '') + ' ' + (card.dataset.desc || '');
+        if (hay.indexOf(q) === -1) ok = false;
+      }
+      if (ok && emp && (card.dataset.emp || '').indexOf(emp) === -1) ok = false;
+      if (ok && overOnly && card.dataset.overdue !== '1') ok = false;
+      if (ok && noEmpOnly && card.dataset.noemp !== '1') ok = false;
+      card.style.display = ok ? '' : 'none';
+      if (ok) { colShown++; shown++; }
+    });
+    var colEmpty = col.querySelector('.kb-empty');
+    if (colEmpty) { colEmpty.style.display = colShown ? 'none' : ''; }
+    col.querySelector('.kb-count').textContent = colShown;
+  });
 }
 </script>
 

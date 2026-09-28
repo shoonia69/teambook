@@ -32,7 +32,7 @@
       </form>
     </div>
     {% if members.get(t.id) %}
-      <span class="emp">Исполнители: {{ members[t.id] | join(', ') }}</span>
+      <span class="emp">Исполнители: {{ members[t.id] | map(attribute='name') | join(', ') }}</span>
     {% endif %}
   </div>
   {% endfor %}

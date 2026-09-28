@@ -3,6 +3,7 @@
 import os
 import tempfile
 import sys
+import re as _re
 
 tmp = tempfile.mkdtemp()
 os.environ["HR_DATA_DIR"] = tmp
@@ -438,6 +439,16 @@ c.post("/board/task/add", data={
 r = c.get("/board")
 html = r.get_data(as_text=True)
 check("колокольчик всё ещё показывает просрочку", "Просрочено" in html)
+# --- счётчик просроченных задач на пункте «Доска» в меню ---
+r = c.get("/board")
+h = r.get_data(as_text=True)
+m_board = _re.search(r'Доска<span class="nav-badge">(\d+)</span>', h)
+check("меню: на пункте «Доска» бейдж с просроченными", m_board is not None and int(m_board.group(1)) >= 1)
+# --- сводка «цифры недели» на главной ---
+r = c.get("/")
+h = r.get_data(as_text=True)
+check("главная: сводка цифр недели (stats-row)",
+      "stats-row" in h and "открытых задач" in h and "просрочено" in h)
 check("задача создана с датами и двумя исполнителями",
       tasks[0]["start_date"] == "2026-10-01" and tasks[0]["due_date"] == "2026-10-10"
       and sorted(m["employee_id"] for m in mem) == sorted([emp_kb["id"], emp_kb2["id"]]))

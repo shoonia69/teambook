@@ -87,6 +87,18 @@ a:hover { text-decoration: underline; }
 
 /* ---------- layout ---------- */
 .container { max-width: 1180px; margin: 24px auto; padding: 0 20px; }
+
+/* сводка на главной (цифры недели) */
+.stats-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+.stat-card {
+  display: block; flex: 1 1 160px; min-width: 140px; text-align: left;
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 14px 16px; text-decoration: none; color: var(--text);
+}
+a.stat-card:hover { border-color: var(--accent); text-decoration: none; }
+.stat-num { display: block; font-size: 26px; font-weight: 700; line-height: 1.1; }
+.stat-label { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; }
+a.stat-card.warn .stat-num { color: var(--danger); }
 @media (min-width: 1400px) { .container { max-width: 1500px; } }
 @media (min-width: 1800px) { .container { max-width: 1900px; } }
 .footer { text-align: center; color: var(--muted); font-size: 13px; padding: 30px 0 24px; }
@@ -302,6 +314,37 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
 .kb-card-meta { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 12px; flex-wrap: wrap; }
 .kb-card-meta .spacer { flex: 1; }
 
+/* фильтры и поиск на доске */
+.kb-filter-bar {
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+  padding: 8px 10px; margin-bottom: 10px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+}
+.kb-filter-bar input[type="text"] { flex: 1; min-width: 180px; }
+.kb-filter-bar select { max-width: 200px; }
+.kb-chk { display: inline-flex; gap: 5px; align-items: center; font-size: 13px; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.kb-chk input { width: auto; }
+
+/* просроченная задача — красная рамка и бейдж */
+.kb-card.ov { border-color: color-mix(in srgb, var(--danger) 60%, transparent); background: color-mix(in srgb, var(--danger) 8%, var(--panel2)); }
+.kb-ov-badge {
+  display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 8px;
+  background: var(--danger); color: #fff; font-size: 10px; font-weight: 700;
+  vertical-align: middle; text-transform: none;
+}
+.kb-card-meta .dates.over { color: var(--danger); font-weight: 600; }
+
+/* чипы исполнителей */
+.kb-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.kb-chip {
+  --cd: 0;
+  padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 500;
+  background: color-mix(in srgb, var(--kb-c) 18%, var(--panel2));
+  color: var(--text); border: 1px solid color-mix(in srgb, var(--kb-c) 45%, var(--border));
+  cursor: default; white-space: nowrap; max-width: 130px; overflow: hidden; text-overflow: ellipsis;
+}
+.kb-noemp { color: var(--danger); opacity: .8; }
+
 .kb-add-col { margin-bottom: 12px; }
 .kb-add-col input, .kb-add-task input { flex: 1; min-width: 120px; }
 .kb-add-task { display: flex; gap: 6px; margin-top: auto; }
@@ -407,3 +450,24 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
 
 /* чипы исполнителей на карточке */
 .kb-card .emp { display: inline-block; }
+
+/* ---------- адаптивность: планшеты и мобильные ---------- */
+@media (max-width: 860px) {
+  .topbar { flex-wrap: wrap; height: auto; padding: 8px 12px; gap: 10px; }
+  .nav { gap: 12px; order: 3; width: 100%; overflow-x: auto; padding-bottom: 2px; }
+  .nav a { white-space: nowrap; }
+  .user-area { margin-left: auto; }
+  .notif-drop { width: min(92vw, 360px); right: -20px; }
+  .kanban-panel, .gantt-panel { min-width: 0; flex-basis: 100%; }
+  .kb-col { min-width: 240px; }
+  .gantt-cal { overflow-x: auto; }
+  .gcal-cell { min-width: 90px; }
+  .stats-row { gap: 8px; }
+  .stat-card { flex-basis: 45%; min-width: 0; }
+}
+@media (max-width: 560px) {
+  .brand-name { display: none; }
+  .kb-filter-bar select { max-width: 100%; }
+  .kb-chk { font-size: 12px; }
+  .container { padding: 0 10px; }
+}
