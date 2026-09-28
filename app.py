@@ -403,6 +403,57 @@ def login_required(f):
 
 
 # --------------------------------------------------------------------------- #
+# Уведомления (шапка: выпадающее окно со счётчиком)
+# --------------------------------------------------------------------------- #
+def _notifications(db):
+    """Активные задачи со сроком ≤ сегодня — кандидаты на уведомления.
+
+    Возвращает dict: {overdue: [...], soon: [...], total: int}.
+    overdue — срок уже вышел; soon — срок сегодня/завтра.
+    """
+    today = date.today()
+    today_s = today.isoformat()
+    tomorrow_s = (today + timedelta(days=1)).isoformat()
+    rows = db.execute(
+        """SELECT t.id, t.title, t.due_date, t.archived_at, t.deleted_at, c.name AS col_name
+           FROM kb_tasks t
+           LEFT JOIN kb_columns c ON c.id = t.column_id
+           WHERE t.archived_at = '' AND t.deleted_at = ''
+             AND t.due_date != '' AND t.due_date <= ?
+           ORDER BY t.due_date ASC""",
+        (tomorrow_s,),
+    ).fetchall()
+    members = _task_members_map(db)
+    overdue, soon = [], []
+    for r in rows:
+        item = {
+            "id": r["id"], "title": r["title"],
+            "due_date": r["due_date"], "col_name": r["col_name"] or "Бэклог",
+            "emp": ", ".join(members.get(r["id"], [])),
+        }
+        if r["due_date"] < today_s:
+            overdue.append(item)
+        else:
+            soon.append(item)
+    overdue = overdue[:15]
+    soon = soon[:10]
+    return {"overdue": overdue, "soon": soon,
+            "total": len(overdue) + len(soon)}
+
+
+@app.context_processor
+def _inject_notifications():
+    """Доступно в любом шаблоне под авторизованным пользователем."""
+    if not session.get("authed"):
+        return {"notifications": None}
+    try:
+        db = get_db()
+        return {"notifications": _notifications(db)}
+    except Exception:
+        return {"notifications": None}
+
+
+# --------------------------------------------------------------------------- #
 # Дашборд / разбивка по годам
 # --------------------------------------------------------------------------- #
 @app.route("/")

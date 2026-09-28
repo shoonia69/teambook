@@ -417,6 +417,27 @@ tasks = dbq("SELECT * FROM kb_tasks WHERE title='Задача А'")
 mem = dbq("SELECT employee_id FROM kb_task_members WHERE task_id=?", (tasks[0]["id"],))
 check("новая задача упала в Бэклог",
       len(tasks) == 1 and tasks[0]["column_id"] == backlog["id"])
+# --- уведомления в шапке: просроченная задача попадает в колокольчик ---
+overdue_title = "Просроченная задача ЮЗ"
+c.post("/board/task/add", data={
+    "title": overdue_title,
+    "employee_id": [str(emp_kb["id"])],
+    "start_date": "2026-09-01", "due_date": "2026-09-01",
+}, follow_redirects=True)
+ov = dbq("SELECT id FROM kb_tasks WHERE title=?", (overdue_title,))
+check("просроченная задача создана", len(ov) == 1)
+r = c.get("/board")
+html = r.get_data(as_text=True)
+check("в шапке есть колокольчик с бейджем",
+      "notif-badge" in html and "Просрочено" in html and overdue_title in html)
+# задача без срока не порождает уведомления
+c.post("/board/task/add", data={
+    "title": "Задача без срока",
+    "employee_id": [str(emp_kb["id"])],
+}, follow_redirects=True)
+r = c.get("/board")
+html = r.get_data(as_text=True)
+check("колокольчик всё ещё показывает просрочку", "Просрочено" in html)
 check("задача создана с датами и двумя исполнителями",
       tasks[0]["start_date"] == "2026-10-01" and tasks[0]["due_date"] == "2026-10-10"
       and sorted(m["employee_id"] for m in mem) == sorted([emp_kb["id"], emp_kb2["id"]]))

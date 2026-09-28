@@ -20,10 +20,43 @@
       <a href="{{ url_for('employee_new') }}">+ Добавить сотрудника</a>
     </nav>
   <div class="user-area">
-    {% if session.get('authed') %}
-      <a class="logout" href="{{ url_for('logout') }}">Выйти</a>
-    {% endif %}
-  </div>
+      {% if session.get('authed') %}
+        {% if notifications %}
+        <div class="notif">
+          <button class="notif-btn" id="notifBtn" aria-label="Уведомления">
+            <svg class="notif-bell" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+            {% if notifications.total > 0 %}<span class="notif-badge">{{ notifications.total }}</span>{% endif %}
+          </button>
+          <div class="notif-drop" id="notifDrop" hidden>
+            {% if notifications.overdue %}
+            <div class="notif-group"><div class="notif-title">Просрочено · срок вышел</div>
+              {% for n in notifications.overdue %}
+              <a class="notif-item over" href="{{ url_for('board') }}">
+                <div class="notif-item-row"><span class="notif-txt">{{ n.title }}</span><span class="notif-date">{{ n.due_date }}</span></div>
+                <div class="notif-meta">{{ n.col_name }}{% if n.emp %} · {{ n.emp }}{% endif %}</div>
+              </a>
+              {% endfor %}
+            </div>
+            {% endif %}
+            {% if notifications.soon %}
+            <div class="notif-group"><div class="notif-title">Срок сегодня-завтра</div>
+              {% for n in notifications.soon %}
+              <a class="notif-item" href="{{ url_for('board') }}">
+                <div class="notif-item-row"><span class="notif-txt">{{ n.title }}</span><span class="notif-date">{{ n.due_date }}</span></div>
+                <div class="notif-meta">{{ n.col_name }}{% if n.emp %} · {{ n.emp }}{% endif %}</div>
+              </a>
+              {% endfor %}
+            </div>
+            {% endif %}
+            {% if not notifications.overdue and not notifications.soon %}
+            <div class="notif-empty">Горизонт уведомлений пуст ✓</div>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+        <a class="logout" href="{{ url_for('logout') }}">Выйти</a>
+      {% endif %}
+    </div>
 </header>
 
 <main class="container">
@@ -70,8 +103,22 @@
     });
   });
   mo.observe(document.body, { childList: true, subtree: true });
-  fitAll();
-})();
-</script>
+    fitAll();
+  })();
+
+  /* Уведомления: открытие/закрытие выпадающего окна, закрытие по клику вне */
+  (function () {
+    var btn = document.getElementById('notifBtn');
+    var drop = document.getElementById('notifDrop');
+    if (!btn || !drop) return;
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      drop.hidden = !drop.hidden;
+    });
+    document.addEventListener('click', function () { drop.hidden = true; });
+    drop.addEventListener('click', function (e) { e.stopPropagation(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') drop.hidden = true; });
+  })();
+  </script>
 </body>
 </html>
