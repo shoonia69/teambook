@@ -502,6 +502,28 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
   display: flex; align-items: center; gap: 8px;
   background: var(--panel2); border: 1px solid var(--border);
   border-radius: 8px; padding: 8px 10px;
+  cursor: grab;
+  transition: background .12s ease, border-color .12s ease, transform .12s ease, box-shadow .12s ease;
+}
+.todo-item:hover {
+  background: var(--panel); border-color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0,0,0,.18);
+}
+.todo-item:active { cursor: grabbing; }
+.todo-item.todo-dragging {
+  opacity: .35; transform: scale(.98);
+  border-style: dashed;
+  background: transparent;
+}
+.todo-drag-ghost {
+  position: fixed; z-index: 9999; pointer-events: none;
+  background: var(--panel); border: 2px solid var(--accent);
+  border-radius: 8px; padding: 6px 12px;
+  box-shadow: 0 6px 20px rgba(0,0,0,.35);
+  font-size: 14px; color: var(--text);
+  max-width: 280px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transform: rotate(2deg);
 }
 .todo-title { flex: 1; font-size: 14px; }
 .todo-due { font-size: 12px; color: var(--muted); background: rgba(79,140,255,.12); padding: 1px 6px; border-radius: 6px; white-space: nowrap; }

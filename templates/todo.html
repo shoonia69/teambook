@@ -36,7 +36,7 @@
     <div class="todo-list">
       {% for t in backlog %}
       {% set is_over = t.due_date and t.due_date < today_s %}
-      <div class="todo-item {% if is_over %}todo-over{% endif %}" draggable="true" ondragstart="dirTodoDrag(event, {{ t.id }})"
+      <div class="todo-item {% if is_over %}todo-over{% endif %}" draggable="true" ondragstart="dirTodoDrag(event, {{ t.id }})" ondragend="todoDragEnd(event)"
            data-title="{{ t.title|lower }}" data-tag="{{ t.tag|lower }}">
         <span class="todo-title">{{ t.title }}</span>
         {% if t.due_date %}<span class="todo-due {% if is_over %}over{% endif %}" title="Срок">{{ t.due_date[5:] }}{% if is_over %} ⚠{% endif %}</span>{% endif %}
@@ -80,7 +80,7 @@
         <div class="todo-list">
           {% for t in tasks %}
           {% set is_over = t.due_date and t.due_date < today_s %}
-          <div class="todo-item {% if is_over %}todo-over{% endif %}" draggable="true" ondragstart="dirTodoDrag(event, {{ t.id }})"
+          <div class="todo-item {% if is_over %}todo-over{% endif %}" draggable="true" ondragstart="dirTodoDrag(event, {{ t.id }})" ondragend="todoDragEnd(event)"
                data-title="{{ t.title|lower }}" data-tag="{{ t.tag|lower }}">
             <span class="todo-title">{{ t.title }}</span>
             {% if t.due_date %}<span class="todo-due {% if is_over %}over{% endif %}" title="Срок">{{ t.due_date[5:] }}{% if is_over %} ⚠{% endif %}</span>{% endif %}
@@ -127,6 +127,22 @@ function dirTodoDrag(ev, id) {
   todoDraggingId = id;
   ev.dataTransfer.effectAllowed = 'move';
   ev.dataTransfer.setData('text/plain', String(id));
+  /* явный вид перетаскиваемой карточки: исходник «уходит» + призрак-карточка */
+  var card = ev.currentTarget.closest('.todo-item');
+  if (card) card.classList.add('todo-dragging');
+  var titleEl = card ? card.querySelector('.todo-title') : null;
+  var ghost = document.createElement('div');
+  ghost.className = 'todo-drag-ghost';
+  ghost.textContent = titleEl ? titleEl.textContent.trim() : '';
+  document.body.appendChild(ghost);
+  ev.dataTransfer.setDragImage(ghost, 20, 14);
+  ev.dataTransfer.setData('text/plain', String(id));
+}
+function todoDragEnd(ev) {
+  var card = ev.currentTarget.closest('.todo-item');
+  if (card) card.classList.remove('todo-dragging');
+  todoDraggingId = null;
+  document.querySelectorAll('.todo-drag-ghost').forEach(function (g) { g.remove(); });
 }
 function todoDrop(ev, status) {
   ev.preventDefault();
