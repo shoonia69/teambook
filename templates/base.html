@@ -11,20 +11,18 @@
   <div class="brand">
     <a href="{{ url_for('index') }}"><span class="logo">TB</span> <span class="brand-name">TeamBook</span></a>
   </div>
-  <nav class="nav">
-      <a href="{{ url_for('index') }}">Сотрудники</a>
-      <a href="{{ url_for('board') }}">Доска{% if board_overdue %}<span class="nav-badge">{{ '99+' if board_overdue > 99 else board_overdue }}</span>{% endif %}</a>
-      <a href="{{ url_for('todo_page') }}">Мои задачи{% if todo_cnt %}<span class="nav-badge">{{ '99+' if todo_cnt > 99 else todo_cnt }}</span>{% endif %}</a>
-      <a href="{{ url_for('problems_page') }}">Проблемы{% if problems_count %}<span class="nav-badge">{{ problems_count }}</span>{% endif %}</a>
-      <a href="{{ url_for('catalogs') }}">Справочники</a>
-      <a href="{{ url_for('settings_page') }}">Настройки</a>
+  <nav class="nav" aria-label="Основные разделы">
+      <a href="{{ url_for('index') }}" {% if nav_section == 'staff' %}class="active" aria-current="page"{% endif %}>Сотрудники</a>
+      <a href="{{ url_for('board') }}" {% if nav_section == 'board' %}class="active" aria-current="page"{% endif %}>Доска{% if board_overdue %}<span class="nav-badge">{{ '99+' if board_overdue > 99 else board_overdue }}</span>{% endif %}</a>
+      <a href="{{ url_for('todo_page') }}" {% if nav_section == 'todo' %}class="active" aria-current="page"{% endif %}>Мои задачи{% if todo_cnt %}<span class="nav-badge">{{ '99+' if todo_cnt > 99 else todo_cnt }}</span>{% endif %}</a>
+      <a href="{{ url_for('problems_page') }}" {% if nav_section == 'problems' %}class="active" aria-current="page"{% endif %}>Проблемы{% if problems_count %}<span class="nav-badge">{{ '99+' if problems_count > 99 else problems_count }}</span>{% endif %}</a>
     </nav>
   <div class="user-area">
         {% if session.get('authed') %}
           <button class="btn btn-xs" id="themeToggle" title="Светлая/тёмная тема" type="button" onclick="toggleTheme()">◐</button>
           {% if notifications %}
         <div class="notif">
-          <button class="notif-btn" id="notifBtn" aria-label="Уведомления">
+          <button class="notif-btn" id="notifBtn" aria-label="Уведомления" aria-expanded="false" aria-controls="notifDrop">
             <svg class="notif-bell" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
             {% if notifications.total > 0 %}<span class="notif-badge">{{ '99+' if notifications.total > 99 else notifications.total }}</span>{% endif %}
           </button>
@@ -55,7 +53,14 @@
           </div>
         </div>
         {% endif %}
-        <a class="logout" href="{{ url_for('logout') }}">Выйти</a>
+        <div class="more">
+          <button class="more-btn" id="moreBtn" aria-label="Ещё" aria-expanded="false" aria-controls="moreMenu" title="Ещё разделы">•••</button>
+          <div class="more-menu" id="moreMenu" hidden>
+            <a href="{{ url_for('catalogs') }}" {% if nav_section == 'refs' %}class="active" aria-current="page"{% endif %}>Справочники</a>
+            <a href="{{ url_for('settings_page') }}" {% if nav_section == 'settings' %}class="active" aria-current="page"{% endif %}>Настройки</a>
+            <a class="danger" href="{{ url_for('logout') }}">Выйти</a>
+          </div>
+        </div>
       {% endif %}
     </div>
 </header>
@@ -124,18 +129,47 @@ window.CSRF = "{{ csrf_token }}";
   })();
 
   /* Уведомления: открытие/закрытие выпадающего окна, закрытие по клику вне */
-  (function () {
-    var btn = document.getElementById('notifBtn');
-    var drop = document.getElementById('notifDrop');
-    if (!btn || !drop) return;
-    btn.addEventListener('click', function (e) {
-      e.stopPropagation();
-      drop.hidden = !drop.hidden;
-    });
-    document.addEventListener('click', function () { drop.hidden = true; });
-    drop.addEventListener('click', function (e) { e.stopPropagation(); });
-    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') drop.hidden = true; });
-  })();
-  </script>
+    (function () {
+      var btn = document.getElementById('notifBtn');
+      var drop = document.getElementById('notifDrop');
+      if (!btn || !drop) return;
+      var sync = function () { btn.setAttribute('aria-expanded', String(!drop.hidden)); };
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        drop.hidden = !drop.hidden;
+        sync();
+        // закрываем меню «Ещё», если открыто
+        var m = document.getElementById('moreMenu');
+        if (m && !m.hidden) { m.hidden = true; syncMore(); }
+      });
+      document.addEventListener('click', function () { drop.hidden = true; sync(); });
+      drop.addEventListener('click', function (e) { e.stopPropagation(); });
+      document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { drop.hidden = true; sync(); } });
+    })();
+
+    /* Меню «Ещё»: Справочники / Настройки / Выйти — непрозрачное, закрытие по клику вне и Escape, возврат фокуса */
+    (function () {
+      var btn = document.getElementById('moreBtn');
+      var menu = document.getElementById('moreMenu');
+      if (!btn || !menu) return;
+      window.syncMore = function () { btn.setAttribute('aria-expanded', String(!menu.hidden)); };
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        menu.hidden = !menu.hidden;
+        syncMore();
+        var nd = document.getElementById('notifDrop');
+        if (nd && !nd.hidden) { nd.hidden = true; var nb = document.getElementById('notifBtn'); if (nb) nb.setAttribute('aria-expanded', 'false'); }
+      });
+      document.addEventListener('click', function () { if (!menu.hidden) { menu.hidden = true; syncMore(); } });
+      menu.addEventListener('click', function (e) { e.stopPropagation(); });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && !menu.hidden) {
+          menu.hidden = true;
+          syncMore();
+          btn.focus(); // возврат фокуса на триггер
+        }
+      });
+    })();
+    </script>
 </body>
 </html>

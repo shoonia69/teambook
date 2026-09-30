@@ -53,8 +53,14 @@ a:hover { text-decoration: underline; }
 }
 .brand-name { font-weight: 600; font-size: 17px; }
 .nav { display: flex; gap: 18px; flex: 1; }
-.nav a { color: var(--muted); font-weight: 500; }
+.nav a { color: var(--muted); font-weight: 500; position: relative; }
 .nav a:hover { color: var(--text); text-decoration: none; }
+/* активный раздел: цвет текста + нижний маркер (видим в обеих темах) */
+.nav a.active { color: var(--text); }
+.nav a.active::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -6px;
+  height: 3px; border-radius: 2px; background: var(--accent);
+}
 .nav-badge {
   display: inline-block; min-width: 17px; height: 17px; padding: 0 4px; margin-left: 4px;
   border-radius: 9px; background: var(--danger); color: #fff;
@@ -97,6 +103,29 @@ a:hover { text-decoration: underline; }
 .notif-item.over .notif-date { color: var(--danger); font-weight: 600; }
 .notif-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .notif-empty { padding: 18px 12px; text-align: center; color: var(--muted); font-size: 14px; }
+
+/* меню «Ещё» (Справочники / Настройки / Выйти) — непрозрачный фон, чтоб не просвечивал контент */
+.more { position: relative; }
+.more-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 36px; height: 36px; border-radius: 9px; border: 1px solid var(--border);
+  cursor: pointer; background: transparent; color: var(--muted); font-size: 15px; letter-spacing: 1px;
+}
+.more-btn:hover { background: var(--border); color: var(--text); }
+.more-btn[aria-expanded="true"] { background: var(--panel2); color: var(--text); border-color: var(--accent); }
+.more-menu {
+  position: absolute; top: calc(100% + 8px); right: 0; min-width: 210px;
+  background: var(--panel2); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: 0 12px 40px rgba(0,0,0,.35); z-index: 50; padding: 6px;
+}
+.more-menu[hidden] { display: none; }
+.more-menu a {
+  display: block; padding: 10px 12px; border-radius: 8px; color: var(--text);
+  text-decoration: none; font-weight: 500; white-space: nowrap;
+}
+.more-menu a:hover { background: var(--panel); text-decoration: none; }
+.more-menu a.active { color: var(--accent); background: var(--panel); }
+.more-menu a.danger { color: var(--danger); }
 
 /* ---------- layout ---------- */
 .container { max-width: 1180px; margin: 24px auto; padding: 0 20px; }
@@ -471,10 +500,15 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
 /* ---------- адаптивность: планшеты и мобильные ---------- */
 @media (max-width: 860px) {
   .topbar { flex-wrap: wrap; height: auto; padding: 8px 12px; gap: 10px; }
-  .nav { gap: 12px; order: 3; width: 100%; overflow-x: auto; padding-bottom: 2px; }
-  .nav a { white-space: nowrap; }
+  .nav { gap: 12px; order: 3; flex: 0 0 100%; overflow-x: auto; overflow-y: visible; padding-bottom: 12px; }
+  .nav a { white-space: nowrap; min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; justify-content: center; }
   .user-area { margin-left: auto; }
+  /* touch-target ≥44×44 px */
+  .notif-btn { width: 44px; height: 44px; }
+  .more-btn { min-width: 44px; height: 44px; }
+  #themeToggle { min-width: 44px; min-height: 44px; }
   .notif-drop { width: min(92vw, 360px); right: -20px; }
+  .more-menu { right: -4px; }
   .kanban-panel, .gantt-panel { min-width: 0; flex-basis: 100%; }
   .kb-col { min-width: 240px; }
   .gantt-cal { overflow-x: auto; }

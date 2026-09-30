@@ -856,6 +856,28 @@ def _inject_notifications():
         return {"notifications": None}
 
 
+_NAV_SECTION = {
+    "index": "staff",
+    "employee_view": "staff",
+    "employee_form": "staff",
+    "board": "board",
+    "board_archive": "board",
+    "board_trash": "board",
+    "todo_page": "todo",
+    "todo_archive": "todo",
+    "problems_page": "problems",
+    "catalogs": "refs",
+    "settings_page": "settings",
+    "backup_page": "settings",
+}
+
+
+@app.context_processor
+def _inject_nav_section():
+    """Какой раздел верхней навигации (и меню «Ещё») считать активным."""
+    return {"nav_section": _NAV_SECTION.get(request.endpoint or "", "")}
+
+
 # --------------------------------------------------------------------------- #
 # Дашборд / разбивка по годам
 # --------------------------------------------------------------------------- #
