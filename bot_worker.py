@@ -21,6 +21,11 @@ from telegram.ext import (
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 log = logging.getLogger("teambook-bot")
 
+# P2.6: httpx/httpcore логируют полный URL запроса (в нём телеграм-токен в пути).
+# Снижаем их уровень, чтобы токен не попадал в логи/файл вывода воркера.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+
 TOKEN = os.environ.get("TG_TOKEN", "")
 ADMIN = int(os.environ.get("TG_ADMIN", "0") or 0)
 DB_PATH = os.environ.get("TG_DB", "/app/data/hr_notes.db")
@@ -32,7 +37,47 @@ PENDING = {}
 def db():
     c = sqlite3.connect(DB_PATH)
     c.row_factory = sqlite3.Row
+    c.execute("PRAGMA foreign_keys = ON")
     return c
+
+
+from contextlib import contextmanager
+
+
+@contextmanager
+def _db():
+    """Открывает/закрывает соединение (коммит+close), даже при исключении —
+    чтобы сбойный INSERT (например нарушение FK) не оставлял открытый lock."""
+    c = sqlite3.connect(DB_PATH)
+    c.row_factory = sqlite3.Row
+    c.execute("PRAGMA foreign_keys = ON")
+    try:
+        yield c
+    finally:
+        c.close()
+
+
+def _clear_pending(update):
+    """Сбрасывает активный режим ввода этого пользователя (команды/навигация)."""
+    try:
+        if update is not None and update.effective_user is not None:
+            PENDING.pop(update.effective_user.id, None)
+    except Exception:
+        pass
+
+
+def _private(update):
+    """Чувствительные кадровые данные показываем ТОЛЬКО в личном чате с ботом
+    (чтобы в supergroup их не увидели посторонние)."""
+    return bool(update.effective_chat) and update.effective_chat.type == "private"
+
+
+def _cap(text, limit=4000):
+    """Ограничивает длину сообщения до лимита Telegram (4096), сохраняя содержимое."""
+    s = str(text or "")
+    if len(s) <= limit:
+        return s
+    return s[: limit - 3].rstrip() + "…"
 
 
 # --------------------------------------------------------------------------- #
@@ -148,42 +193,38 @@ def all_columns():
 
 
 def add_employee_problem(eid, text):
-    c = db()
-    c.execute("INSERT INTO problems (employee_id, text) VALUES (?,?)", (eid, text))
-    c.commit()
-    c.close()
+    with _db() as c:
+        c.execute("INSERT INTO problems (employee_id, text) VALUES (?,?)", (eid, text))
+        c.commit()
 
 
 def delete_problem(pid):
-    c = db()
-    c.execute("DELETE FROM problems WHERE id=?", (pid,))
-    c.commit()
-    c.close()
+    with _db() as c:
+        c.execute("DELETE FROM problems WHERE id=?", (pid,))
+        c.commit()
 
 
 def add_task(title, column_id, desc=""):
-    c = db()
-    cur = c.execute(
-        "INSERT INTO kb_tasks (title, column_id, description) VALUES (?,?,?)",
-        (title, column_id or None, desc))
-    c.commit()
-    tid = cur.lastrowid
-    c.close()
+    with _db() as c:
+        cur = c.execute(
+            "INSERT INTO kb_tasks (title, column_id, description) VALUES (?,?,?)",
+            (title, column_id or None, desc))
+        tid = cur.lastrowid
+        c.commit()
     return tid
 
 
 def add_todo(title):
     """Добавить задачу в личный todo руководителя (в бэклог)."""
-    c = db()
-    row = c.execute(
-        "SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM todo_items WHERE status='backlog'"
-    ).fetchone()
-    cur = c.execute(
-        "INSERT INTO todo_items (title, status, sort_order) VALUES (?, 'backlog', ?)",
-        (title, row["n"]))
-    c.commit()
-    tid = cur.lastrowid
-    c.close()
+    with _db() as c:
+        row = c.execute(
+            "SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM todo_items WHERE status='backlog'"
+        ).fetchone()
+        cur = c.execute(
+            "INSERT INTO todo_items (title, status, sort_order) VALUES (?, 'backlog', ?)",
+            (title, row["n"]))
+        tid = cur.lastrowid
+        c.commit()
     return tid
 
 
@@ -195,10 +236,9 @@ def task_by_id(tid):
 
 
 def move_task(tid, column_id):
-    c = db()
-    c.execute("UPDATE kb_tasks SET column_id=? WHERE id=?", (column_id, tid))
-    c.commit()
-    c.close()
+    with _db() as c:
+        c.execute("UPDATE kb_tasks SET column_id=? WHERE id=?", (column_id, tid))
+        c.commit()
 
 
 # --------------------------------------------------------------------------- #
@@ -224,6 +264,10 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
         await update.message.reply_text("Доступ запрещён. Бот настроен для одного администратора.")
         return
+    _clear_pending(update)
+    if not _private(update):
+        await update.message.reply_text("Работаю только в личном чате.")
+        return
     await update.message.reply_text(
         "👋 TeamBook в Telegram\n\nДублирует функции сайта — сотрудники, "
         "записи, проблемы и канбан-доска.\nВыберите раздел:",
@@ -232,6 +276,10 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
+        return
+    _clear_pending(update)
+    if not _private(update):
+        await update.message.reply_text("Работаю только в личном чате.")
         return
     await update.message.reply_text(
         "Команды:\n/start — главное меню\n"
@@ -247,7 +295,15 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
     if not is_admin(update.effective_user.id):
         return
+    if not _private(update):
+        await q.edit_message_text("Работаю только в личном чате.")
+        return
+    uid = update.effective_user.id
     data = q.data
+
+    # нажатие любой кнопки вне ожидания текста отменяет активный ввод
+    if not (data == "board_new" or data == "todo_add" or data.startswith("probad:")):
+        PENDING.pop(uid, None)
 
     if data == "help":
         await q.edit_message_text(
@@ -274,7 +330,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text("Выберите сотрудника:", reply_markup=emp_pick_kb("probad"))
         return
     if data.startswith("probad:"):
-        PENDING[f"probadd:{update.effective_user.id}"] = int(data.split(":")[1])
+        PENDING[uid] = ("probadd", int(data.split(":")[1]))
         await q.edit_message_text(
             "✍️ Введите текст проблемы сотруднику (или /cancel):",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("← Назад", callback_data="probs")]]))
@@ -288,7 +344,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_board(q)
         return
     if data == "board_new":
-        PENDING[f"newtask:{update.effective_user.id}"] = True
+        PENDING[uid] = ("newtask",)
         await q.edit_message_text(
             "✍️ Введите название новой задачи (упадёт в 📥 Бэклог).\n"
             "Можно добавить описание после « | »: <название> | <описание>\n(/cancel для отмены)",
@@ -308,7 +364,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_todo(q)
         return
     if data == "todo_add":
-        PENDING[f"todoadd:{update.effective_user.id}"] = True
+        PENDING[uid] = ("todoadd",)
         await q.edit_message_text(
             "✍️ Введите задачу для личного todo (упадёт в 📥 Бэклог).\n"
             "(/cancel для отмены)",
@@ -365,7 +421,7 @@ async def show_employee_detail(q, eid):
         InlineKeyboardButton("← Сотрудники", callback_data="emp"),
         InlineKeyboardButton("Главное меню", callback_data="help"),
     ]]
-    await q.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(kbd))
+    await q.edit_message_text(_cap("\n".join(lines)), reply_markup=InlineKeyboardMarkup(kbd))
 
 
 # проблемы
@@ -449,8 +505,7 @@ def todo_data():
     from datetime import date
     today_s = date.today().isoformat()
     c = db()
-    c.execute("DELETE FROM todo_items WHERE status='done' AND done_date != ?", (today_s,))
-    c.commit()
+    # архив сохраняется полностью (история по дням, не чистится при чтении)
     items = {}
     for key, _label in QUAD_LABELS:
         items[key] = [dict(r) for r in c.execute(
@@ -493,49 +548,52 @@ async def show_todo(q):
 async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
         return
+    if not _private(update):
+        return  # в группах кадровые данные не показываем
     uid = update.effective_user.id
     text = update.message.text.strip()
 
+    # 1) команды всегда маршрутизируются и отменяют активный ввод
     if text == "/cancel":
-        PENDING.pop(f"probadd:{uid}", None)
-        PENDING.pop(f"newtask:{uid}", None)
-        PENDING.pop(f"todoadd:{uid}", None)
+        PENDING.pop(uid, None)
         await update.message.reply_text("Отменено.", reply_markup=main_kb())
         return
-
-    if f"todoadd:{uid}" in PENDING:
-        PENDING.pop(f"todoadd:{uid}")
-        tid = add_todo(text)
-        await update.message.reply_text(f"✅ Задача #{tid} добавлена в бэклог todo.",
-                                        reply_markup=main_kb())
+    if text.startswith("/"):
+        # любая команда (известная или нет) отменяет активный ввод
+        PENDING.pop(uid, None)
+        if text.startswith("/m"):
+            tid = text[2:].strip()
+            if tid.isdigit():
+                await update.message.reply_text(
+                    "Выберите столбец:", reply_markup=InlineKeyboardMarkup(
+                        [[InlineKeyboardButton(c["name"], callback_data=f"mv:{int(tid)}:{c['id']}")]
+                         for c in all_columns()] + [[InlineKeyboardButton("← Отмена", callback_data="board")]]))
+                return
+        await update.message.reply_text(
+            "Не знаю такой команды. Используйте /start, /m<номер> или /cancel.",
+            reply_markup=main_kb())
         return
 
-    if f"probadd:{uid}" in PENDING:
-        eid = PENDING.pop(f"probadd:{uid}")
-        add_employee_problem(eid, text)
-        await update.message.reply_text("✅ Проблема добавлена.", reply_markup=main_kb())
+    # 2) активный режим ввода — один на пользователя (PENDING[uid] = (mode, ...))
+    state = PENDING.pop(uid, None)
+    if state is not None:
+        mode = state[0]
+        if mode == "todoadd":
+            tid = add_todo(text)
+            await update.message.reply_text(f"✅ Задача #{tid} добавлена в бэклог todo.",
+                                            reply_markup=main_kb())
+        elif mode == "newtask":
+            title, _, desc = text.partition("|")
+            columns = all_columns()
+            first = columns[0] if columns else None
+            tid = add_task(title.strip(), first["id"] if first else None, desc.strip())
+            await update.message.reply_text(f"✅ Задача #{tid} добавлена.", reply_markup=main_kb())
+        elif mode == "probadd":
+            add_employee_problem(state[1], text)
+            await update.message.reply_text("✅ Проблема добавлена.", reply_markup=main_kb())
         return
 
-    if f"newtask:{uid}" in PENDING:
-        PENDING.pop(f"newtask:{uid}")
-        title, _, desc = text.partition("|")
-        columns = all_columns()
-        first = columns[0] if columns else None
-        tid = add_task(title.strip(), first["id"] if first else None, desc.strip())
-        await update.message.reply_text(f"✅ Задача #{tid} добавлена.", reply_markup=main_kb())
-        return
-
-    # попытка переместить: /m12
-    if text.startswith("/m"):
-        tid = text[2:].strip()
-        if tid.isdigit():
-            await update.message.reply_text(
-                "Выберите столбец:", reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton(c["name"], callback_data=f"mv:{int(tid)}:{c['id']}")]
-                     for c in all_columns()] + [[InlineKeyboardButton("← Отмена", callback_data="board")]]))
-            return
-
-    # поиск сотрудника
+    # 3) поиск сотрудника
     emps = find_employee(text)
     if emps:
         kbd = [[InlineKeyboardButton(e["name"], callback_data=f"emp:{e['id']}")] for e in emps]
@@ -553,6 +611,10 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_m(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
         return
+    _clear_pending(update)
+    if not _private(update):
+        await update.message.reply_text("Работаю только в личном чате.")
+        return
     tid = int(context.args[0]) if context.args and context.args[0].isdigit() else None
     if not tid:
         await update.message.reply_text("Формат: /m <номер задачи>")
@@ -566,6 +628,12 @@ async def cmd_m(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --------------------------------------------------------------------------- #
 # Точка входа
 # --------------------------------------------------------------------------- #
+async def on_error(update, context):
+    """Глобальный обработчик ошибок: логируем, не роняем поллинг, сбрасываем ввод."""
+    _clear_pending(update)
+    log.error("Ошибка обработки обновления: %s", context.error, exc_info=True)
+
+
 def main():
     if not TOKEN:
         log.error("TG_TOKEN не задан — воркер не запущен")
@@ -576,6 +644,7 @@ def main():
     app.add_handler(CommandHandler("m", cmd_m))
     app.add_handler(CallbackQueryHandler(on_callback))
     app.add_handler(MessageHandler(filters.TEXT, on_text))
+    app.add_error_handler(on_error)
     log.info("Воркер запущен (admin=%s)", ADMIN)
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 

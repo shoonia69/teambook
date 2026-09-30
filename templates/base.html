@@ -78,6 +78,8 @@
 </footer>
 
 <script>
+/* CSRF-токен сессии — для fetch()/XHR POST-запросов (заголовок X-CSRF-Token). */
+window.CSRF = "{{ csrf_token }}";
 /* Тема: светлая/тёмная, выбор сохраняется в localStorage */
 (function () {
   try {

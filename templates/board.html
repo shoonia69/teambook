@@ -39,7 +39,7 @@
              ondragleave="this.classList.remove('drag-over')"
              ondrop="dropOn(event, {{ col.id }})">
           <div class="kb-col-head">
-            <span class="kb-grip" draggable="true" ondragstart="dragCol(event)"
+            <span class="kb-grip" draggable="true" ondragstart="dragCol(event)" ondragend="dragEnd(event)"
                   title="Перетащите на другой столбец, чтобы изменить порядок" aria-label="Перетащить столбец">⠿</span>
             <span class="kb-col-name">{{ col.name }}</span>
             <span class="kb-count">{{ tasks|length }}</span>
@@ -63,7 +63,7 @@
             {% set is_overdue = t.due_date and t.due_date < today_iso %}
             {% set is_noemp = who|length == 0 %}
             <div class="kb-card {% if is_overdue %}ov{% endif %}"  draggable="true"
-                 ondragstart="dragTask(event)"
+                 ondragstart="dragTask(event)" ondragend="dragEnd(event)"
                  onclick="openCard({{ t.id }})"
                  data-id="{{ t.id }}"
                  data-title="{{ (t.title ~ ((' ' ~ t.description) if t.description else ''))|lower }}"
@@ -202,10 +202,16 @@ let draggedId = null;
 let draggedColId = null;
 function dragCol(ev) {
   if (ev.target !== ev.currentTarget) return;   /* drag только за саму ручку */
+  draggedId = null;                              /* начало переноса столбца, а не карточки */
   draggedColId = ev.currentTarget.dataset.cid ? ev.currentTarget.dataset.cid
                 : ev.currentTarget.closest('.kb-col').dataset.colid;
   ev.dataTransfer.effectAllowed = 'move';
   ev.dataTransfer.setData('text/plain', draggedColId);
+}
+function dragEnd() {
+  /* сброс обоих «залипших» id — отмена drag иначе тащит прежний объект */
+  draggedId = null;
+  draggedColId = null;
 }
 function dropOn(ev, colId) {
   if (draggedColId) {           /* перетаскивание столбца */
@@ -220,10 +226,11 @@ function dropOn(ev, colId) {
 function moveCol(cid, beforeCid) {
   var fd = new FormData();
   fd.append('before', beforeCid === null ? '' : beforeCid);
-  fetch('/board/column/' + encodeURIComponent(cid) + '/move', { method: 'POST', body: fd })
+  fetch('/board/column/' + encodeURIComponent(cid) + '/move', { method: 'POST', body: fd, headers: { 'X-CSRF-Token': window.CSRF } })
     .then(function () { location.reload(); });
 }
 function dragTask(ev) {
+  draggedColId = null;                          /* начало переноса карточки, а не столбца */
   draggedId = ev.currentTarget.dataset.id;
   ev.dataTransfer.effectAllowed = 'move';
   ev.dataTransfer.setData('text/plain', ev.currentTarget.dataset.id);
@@ -248,17 +255,18 @@ function dropTask(ev, colId) {
   if (!draggedId) return;
   var fd = new FormData();
   fd.append('column_id', colId === null ? '' : colId);
-  fetch('/board/task/' + encodeURIComponent(draggedId) + '/move', { method: 'POST', body: fd })
+  fetch('/board/task/' + encodeURIComponent(draggedId) + '/move', { method: 'POST', body: fd, headers: { 'X-CSRF-Token': window.CSRF } })
     .then(function () { location.reload(); });
   draggedId = null;
 }
 function dropZone(ev, zone) {
   ev.preventDefault();
   ev.currentTarget.classList.remove('drag-over');
-  if (!draggedId) return;
+  if (!draggedId || draggedColId) return;   /* зоны слоёв — только для карточек */
   var id = encodeURIComponent(draggedId);
   var url = zone === 'archive' ? '/board/task/' + id + '/archive' : '/board/task/' + id + '/trash';
-  fetch(url, { method: 'POST' }).then(function () { location.reload(); });
+  fetch(url, { method: 'POST', headers: { 'X-CSRF-Token': window.CSRF } })
+    .then(function () { location.reload(); });
   draggedId = null;
 }
 

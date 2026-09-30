@@ -40,6 +40,28 @@ c.post("/login", data={"password": "wrong"})
 r = c.post("/login", data={"password": "test-pass-123"}, follow_redirects=True)
 check("вход с верным паролем", r.status_code == 200 and "Сотрудники" in r.get_data(as_text=True))
 
+# CSRF: тесты отправляют валидный токен (эндпоинт /login сам CSRF-исключён).
+# Оборачиваем клиент, чтобы все последующие POST проходили проверку токена —
+# в т.ч. POST без тела (удаления/корзина/перенос) получали _csrf.
+CSRF_TOKEN = "test-csrf-abcdef"
+with c.session_transaction() as sess:
+    sess["_csrf"] = CSRF_TOKEN
+_orig_post = c.post
+
+
+def _client_post(url, *args, **kwargs):
+    data = kwargs.get("data")
+    if data is None:
+        kwargs["data"] = {"_csrf": CSRF_TOKEN}
+    elif isinstance(data, dict) and "_csrf" not in data:
+        data = dict(data)
+        data["_csrf"] = CSRF_TOKEN
+        kwargs["data"] = data
+    return _orig_post(url, *args, **kwargs)
+
+
+c.post = _client_post
+
 # --- справочники: создание ---
 c.post("/catalog/position/add", data={"name": "Инженер 1 категории"})
 c.post("/catalog/position/add", data={"name": "Старший инженер"})

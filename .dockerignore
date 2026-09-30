@@ -4,5 +4,19 @@ data/
 .git/
 .gitignore
 .DS_Store
+Thumbs.db
 *.md
 README.md
+
+# Deploy-хелперы с учётными данными прод-ВМ — не попадать в образ/контекст
+sshx.py
+upload.py
+
+# Секреты / локальная конфигурация
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*_token*.txt
+teambot.log

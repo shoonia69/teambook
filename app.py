@@ -215,6 +215,15 @@ def init_db():
     os.makedirs(DATA_DIR, exist_ok=True)
     db = sqlite3.connect(DB_PATH)
     db.row_factory = sqlite3.Row
+    _apply_migrations(db)
+    db.commit()
+    db.close()
+
+
+def _apply_migrations(db):
+    """Создаёт/приводит схему к актуальному виду. Вызывается и при старте, и перед
+    активацией восстанавливаемой БД (backup/import) — чтобы импортированный файл
+    старой схемы не ломал приложение (например /todo при отсутствии колонки tag)."""
     db.executescript(SCHEMA)
 
     # Миграция со старой схемы: отвлекаемся на employees с TEXT position/department.
@@ -303,9 +312,11 @@ def init_db():
             "SELECT id FROM kb_columns WHERE kind='kanban' AND locked=0 "
             "ORDER BY sort_order, id LIMIT 1").fetchone()
         if target:
+            # переносим ВСЕ связанные задачи (в т.ч. архивные/удалённые), иначе
+            # при удалении столбца FK выставит им column_id=NULL и карточки
+            # «потеряются» при восстановлении
             db.execute(
-                "UPDATE kb_tasks SET column_id=? WHERE column_id=? AND "
-                "archived_at='' AND deleted_at=''",
+                "UPDATE kb_tasks SET column_id=? WHERE column_id=?",
                 (target["id"], sys_backlog["id"]))
             db.execute("DELETE FROM kb_columns WHERE id=?", (sys_backlog["id"],))
             print("[TeamBook] Системный 📥 Бэклог удалён с канбана, задачи перенесены")
@@ -324,10 +335,32 @@ def init_db():
                    (first_col["id"],))
 
     # Откат матрицы Эйзенхауэра: если с прошлого деплоя остались квадранты-колонки
-    # (kind='emi1'..'emi4'), убираем их. Их задачи уже перенесены в Бэклог
-    # прошлой миграцией; просто удаляем ставшие лишними системные столбцы.
-    for ec in db.execute("SELECT id FROM kb_columns WHERE kind LIKE 'emi%'").fetchall():
-        db.execute("DELETE FROM kb_columns WHERE id=?", (ec["id"],))
+    # (kind='emi1'..'emi4'), убираем их. Сначала переносим ВСЕ их задачи (активные,
+    # архивные и удалённые) в первый обычный столбец — иначе удаление сломает FK.
+    emi_cols = db.execute(
+        "SELECT id FROM kb_columns WHERE kind LIKE 'emi%'").fetchall()
+    if emi_cols:
+        target = db.execute(
+            "SELECT id FROM kb_columns WHERE kind='kanban' ORDER BY sort_order, id LIMIT 1"
+        ).fetchone()
+        emi_target = target["id"] if target else None
+        if emi_target is None:
+            # emi-only база: обычного kanban-столбца нет. Создаём приёмник ЗАРАНЕЕ,
+            # иначе после удаления emi-квадрантов их задачи останутся с битым FK
+            # (column_id ссылается на удалённый столбец) и foreign_key_check завалится.
+            max_sort = db.execute(
+                "SELECT COALESCE(MAX(sort_order), 0) m FROM kb_columns").fetchone()["m"]
+            cur = db.execute(
+                "INSERT INTO kb_columns (name, sort_order, kind, locked) "
+                "VALUES (?, ?, 'kanban', 0)",
+                ("Задачи", max_sort + 1))
+            emi_target = cur.lastrowid
+            print("[TeamBook] Откат Эйзенхауэра: создан обычный столбец-приёмник id=%s"
+                  % emi_target)
+        for ec in emi_cols:
+            db.execute("UPDATE kb_tasks SET column_id=? WHERE column_id=?",
+                       (emi_target, ec["id"]))
+            db.execute("DELETE FROM kb_columns WHERE id=?", (ec["id"],))
         print("[TeamBook] Откат Эйзенхауэра: удалён квадрант-столбец id=%s" % ec["id"])
     # и убираем ставшее ненужным поле emi из задач (если колонка есть)
     if "emi" in kb_cols:
@@ -336,9 +369,6 @@ def init_db():
             print("[TeamBook] Откат Эйзенхауэра: удалена колонка emi из kb_tasks")
         except Exception:
             pass  # DROP COLUMN может быть недоступен в старых SQLite — колонка останется, код её не использует
-
-    db.commit()
-    db.close()
 
 
 def _repair_dangling_fk(db, table, fk_col):
@@ -376,6 +406,206 @@ def _repair_dangling_fk(db, table, fk_col):
     # подменяем
     db.execute(f"DROP TABLE {table}")
     db.execute(f"ALTER TABLE {new_name} RENAME TO \"{table}\"")
+
+
+def _affinity(decl):
+    """SQLite type affinity из объявленного типа (для сравнения сигнатур колонок)."""
+    t = (decl or "").strip().upper()
+    if "INT" in t:
+        return "INTEGER"
+    if ("CHAR" in t) or ("CLOB" in t) or ("TEXT" in t):
+        return "TEXT"
+    if ("REAL" in t) or ("FLOA" in t) or ("DOUB" in t):
+        return "REAL"
+    if ("BLOB" in t) or t == "":
+        return "BLOB"
+    return "NUMERIC"
+
+
+def _norm_default(v):
+    """Нормализация dflt_value для сравнения (снять скобки/пробелы, в нижний регистр)."""
+    if v is None:
+        return None
+    s = str(v).strip()
+    if s.startswith("(") and s.endswith(")"):
+        s = s[1:-1].strip()
+    return s.lower()
+
+
+def _col_signature(con, t):
+    """{колонка: (аффинити-тип, notnull, default)} + набор колонок PRIMARY KEY."""
+    cols = {}
+    pk = set()
+    for r in con.execute("PRAGMA table_info(%s)" % t):
+        cols[r[1]] = (_affinity(r[2]), int(r[3]) == 1, _norm_default(r[4]))
+        if r[5] > 0:
+            pk.add(r[1])
+    return cols, frozenset(pk)
+
+
+def _unique_sets(con, t):
+    uniques = set()
+    # list(...): вложенный pragma_index_info на том же соединении иначе обнуляет
+    # результаты незавершённого курсора index_list
+    for (_seq, name, unique, origin, _partial) in list(
+            con.execute("PRAGMA index_list(%s)" % t)):
+        if unique and origin == "u":  # явный UNIQUE (не автоиндекс PK)
+            uniques.add(frozenset(
+                r[0] for r in con.execute(
+                    "SELECT name FROM pragma_index_info(?)", (name,))))
+    return uniques
+
+
+def _fk_groups(con, t):
+    """ПОЛНЫЕ определения внешних ключей: (parent, on_delete, on_update, match,
+    последовательность (from,to) в порядке seq). Не только (from,parent,to) —
+    иначе БД с ON DELETE NO ACTION вместо CASCADE прошла бы и ломала каскад."""
+    groups = {}
+    for r in con.execute("PRAGMA foreign_key_list(%s)" % t):
+        gid = r[0]
+        if gid not in groups:
+            groups[gid] = {"ptable": r[2], "on_delete": r[6], "on_update": r[5],
+                           "match": r[7], "cols": []}
+        groups[gid]["cols"].append((r[3], r[4]))
+    out = set()
+    for g in groups.values():
+        out.add((g["ptable"], g["on_delete"], g["on_update"], g["match"],
+                 tuple(g["cols"])))
+    return out
+
+
+def _rowid_pk(con, t):
+    """True, если PRIMARY KEY таблицы — настоящий SQLite rowid-alias (автогенерация id).
+
+    rowid-alias = ОДНА колонка с ТОЧНЫМ declared-типом INTEGER (без AUTOINCREMENT тоже
+    генерирует id), без WITHOUT ROWID и без отдельного 'pk'-индекса. BIGINT/TEXT/INTEGER
+    PRIMARY KEY DESC/составной PK НЕ являются rowid-alias (создают sqlite_autoindex с
+    origin='pk') — тогда INSERT без id даёт id=NULL и ломает lastrowid в маршрутах."""
+    row = con.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (t,)).fetchone()
+    sql = (row[0] or "") if row else ""
+    import re
+    if re.search(r"\bWITHOUT\s+ROWID\b", sql or "", re.I):
+        return False
+    info = list(con.execute("PRAGMA table_info(%s)" % t))
+    pkcols = [r for r in info if r[5] > 0]
+    if len(pkcols) != 1:
+        return False
+    if (pkcols[0][2] or "").strip().upper() != "INTEGER":
+        return False
+    for (_seq, _name, _unique, origin, _partial) in list(
+            con.execute("PRAGMA index_list(%s)" % t)):
+        if origin == "pk":  # отдельный индекс PK -> не rowid-alias (BIGINT/DESC/TEXT/адемп)
+            return False
+    return True
+
+
+def _ref_schema():
+    """Эталонная обязательная схема из SCHEMA DDL (in-memory sqlite): для каждой
+    таблицы — сигнатуры колонок (аффинити-тип, NOT NULL, default), PRIMARY KEY,
+    UNIQUE-ограничения и ПОЛНЫЕ определения внешних ключей (on_delete/on_update/
+    match, группировка/порядок столбцов)."""
+    rcon = sqlite3.connect(":memory:")
+    try:
+        rcon.executescript(SCHEMA)
+        tables = {r[0] for r in rcon.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+        ref = {}
+        for t in tables:
+            cols, pk = _col_signature(rcon, t)
+            ref[t] = {"cols": cols, "pk": pk,
+                      "rowid": _rowid_pk(rcon, t),
+                      "uniques": _unique_sets(rcon, t),
+                      "fks": _fk_groups(rcon, t)}
+        return ref
+    finally:
+        rcon.close()
+
+
+def _validate_db_schema(con):
+    """Строгая проверка БД против ПОЛНОЙ актуальной схемы (эталон из SCHEMA):
+    - наличие всех таблиц и всех обязательных колонок;
+    - сигнатуры колонок: аффинити-тип, NOT NULL, default (вкл. INTEGER PK/rowid —
+      TEXT PRIMARY KEY не генерирует id и ломает lastrowid);
+    - PRIMARY KEY (набор), UNIQUE-ограничения;
+    - полные определения FK (on_delete/on_update/match, порядок/группировка);
+    - integrity_check и PRAGMA foreign_key_check.
+    foreign_key_check проверяет только целостность ДАННЫХ FK и не доказывает наличие
+    самих контрактов (settings без PK -> ON CONFLICT; problems без CASCADE ->
+    каскадное удаление сотрудника падает). Легитимные добавочные колонки/
+    ограничения legacy-БД допускаются."""
+    errors = []
+    try:
+        required = _ref_schema()
+    except Exception as e:
+        return ["не удалось построить эталонную схему: %s" % e]
+    try:
+        if con.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+            errors.append("integrity_check != ok")
+    except Exception as e:
+        errors.append("integrity_check: %s" % e)
+    tables = set()
+    try:
+        tables = {r[0] for r in con.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+        missing = sorted(set(required) - tables)
+        if missing:
+            errors.append("нет таблиц: %s" % ", ".join(missing))
+    except Exception as e:
+        errors.append("чтение таблиц: %s" % e)
+    for tbl, spec in required.items():
+        try:
+            ccols, cpk = _col_signature(con, tbl)
+            for col, (aff, nn, dflt) in spec["cols"].items():
+                if col not in ccols:
+                    errors.append("%s: нет колонки %s" % (tbl, col))
+                    continue
+                caff, cnn, cdflt = ccols[col]
+                if caff != aff:
+                    errors.append("%s.%s: тип должен быть %s-аффинити (факт %s)"
+                                  % (tbl, col, aff, caff))
+                if cnn != nn:
+                    errors.append("%s.%s: NOT NULL должен быть %d (факт %d)"
+                                  % (tbl, col, 1 if nn else 0, 1 if cnn else 0))
+                if cdflt != dflt:
+                    errors.append("%s.%s: default должен быть %r (факт %r)"
+                                  % (tbl, col, dflt, cdflt))
+            if cpk != spec["pk"]:
+                errors.append(
+                    "%s: PRIMARY KEY должен быть (%s), фактически (%s)"
+                    % (tbl, ", ".join(sorted(spec["pk"])), ", ".join(sorted(cpk))))
+            _c_rp = _rowid_pk(con, tbl)
+            if _c_rp != spec["rowid"]:
+                if spec["rowid"]:
+                    errors.append(
+                        "%s: PRIMARY KEY не является rowid-alias INTEGER (id не "
+                        "генерируется, ломает lastrowid)" % tbl)
+                else:
+                    errors.append(
+                        "%s: PRIMARY KEY не должен быть rowid-alias (структура "
+                        "ключей не соответствует эталону)" % tbl)
+            miss_un = sorted("(" + ", ".join(sorted(u)) + ")"
+                             for u in spec["uniques"] if u not in _unique_sets(con, tbl))
+            if miss_un:
+                errors.append("%s: нет UNIQUE-ограничения %s" % (tbl, "; ".join(miss_un)))
+            c_grp = _fk_groups(con, tbl)
+            miss_fk = sorted(
+                "%s ON DELETE %s ON UPDATE %s MATCH %s (%s)" % (
+                    g[0], g[1], g[2], g[3],
+                    ", ".join("%s->%s" % (a, b) for a, b in g[4]))
+                for g in spec["fks"] if g not in c_grp)
+            if miss_fk:
+                errors.append("%s: отсутствуют FK-контракты %s"
+                              % (tbl, "; ".join(miss_fk)))
+        except Exception as e:
+            errors.append("%s: проверка структуры: %s" % (tbl, e))
+    try:
+        bad = con.execute("PRAGMA foreign_key_check").fetchall()
+        if bad:
+            errors.append("битые FK: %s" % str(bad[:5]))
+    except Exception as e:
+        errors.append("foreign_key_check: %s" % e)
+    return errors
 
 
 def _migrate_employees(db):
@@ -430,13 +660,91 @@ def ensure_auth():
         return redirect(url_for("login"))
 
 
+# --- CSRF-защита всех изменяющих web-путей ---
+CSRF_EXEMPT = {"login"}
+
+
+def _csrf_token():
+    tok = session.get("_csrf")
+    if not tok:
+        tok = secrets.token_hex(16)
+        session["_csrf"] = tok
+    return tok
+
+
+@app.context_processor
+def _inject_csrf_global():
+    return {"csrf_token": _csrf_token()}
+
+
+@app.before_request
+def csrf_protect():
+    """Защита от CSRF: требует валидный _csrf (форма или X-CSRF-Token) на всех
+    POST, а также отвергает запрос с чужого Origin. /login (эндпоинт входа)
+    проверяется только по Origin — на этапе логина токена в сессии ещё нет."""
+    if request.method != "POST":
+        return
+    endpoint = request.endpoint
+    if endpoint in CSRF_EXEMPT or endpoint is None:
+        return
+    origin = request.headers.get("Origin")
+    if origin:
+        from urllib.parse import urlparse
+        o = urlparse(origin)
+        if o.scheme not in ("http", "https") or (o.netloc and o.netloc != request.host):
+            abort(400)
+    # Сравниваем в байтах через secrets.compare_digest: передача строки напрямую
+    # с не-ASCII (например _csrf=кириллица) бросает TypeError и даёт 500. Любая
+    # ошибка/несовпадение -> 400 (fail closed).
+    try:
+        token = (request.form.get("_csrf")
+                 or request.headers.get("X-CSRF-Token") or "").encode("utf-8")
+        expected = (session.get("_csrf") or "").encode("utf-8")
+        ok = bool(token) and bool(expected) and secrets.compare_digest(token, expected)
+    except Exception:
+        ok = False
+    if not ok:
+        abort(400)
+
+
+@app.after_request
+def _inject_csrf_forms(resp):
+    """Встраиваем скрытый _csrf в каждый <form method="post"> при выдаче HTML —
+    единый способ покрыть все web-формы без ручной вставки в каждом шаблоне."""
+    if resp.status_code != 200:
+        return resp
+    if not session.get("_csrf"):
+        return resp
+    if "text/html" not in (resp.content_type or ""):
+        return resp
+    try:
+        html = resp.get_data(as_text=True)
+    except Exception:
+        return resp
+    if "<form" not in html:
+        return resp
+    import re as _re
+    pat = _re.compile(r'(<form\b[^>]*\bmethod=["\']post["\'][^>]*>)', _re.I)
+    inj = '<input type="hidden" name="_csrf" value="%s">' % session["_csrf"]
+    out = pat.sub(lambda m: m.group(1) + inj, html)
+    if out != html:
+        resp.set_data(out.encode("utf-8"))
+    return resp
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        if secrets.compare_digest(request.form.get("password", ""), ADMIN_PASSWORD):
+        password = request.form.get("password", "")
+        # fail-closed: без настроенного HR_PASSWORD вход невозможен
+        if not ADMIN_PASSWORD:
+            flash("Пароль не настроен — задайте переменную HR_PASSWORD", "error")
+        elif not secrets.compare_digest(password.encode("utf-8"),
+                                        ADMIN_PASSWORD.encode("utf-8")):
+            flash("Неверный пароль", "error")
+        else:
             session["authed"] = True
             return redirect(url_for("index"))
-        flash("Неверный пароль", "error")
     return render_template("login.html")
 
 
@@ -525,7 +833,16 @@ def _inject_notifications():
         except Exception:
             n = 0
         notif = _notifications(db)
-        board_overdue = len(notif["overdue"])
+        # бейдж «Доска» в меню считает ТОЛЬКО просроченные задачи КАНБАНА
+        # (не todo и без капа в 15, в отличие от выпадающего списка в колокольчике)
+        try:
+            board_overdue = db.execute(
+                "SELECT COUNT(*) c FROM kb_tasks "
+                "WHERE archived_at = '' AND deleted_at = '' "
+                "AND due_date != '' AND due_date < ?",
+                (date.today().isoformat(),)).fetchone()["c"]
+        except Exception:
+            board_overdue = 0
         # счётчик задач в личном todo (невыполненные: бэклог + квадранты)
         try:
             todo_cnt = db.execute(
@@ -1214,16 +1531,29 @@ def backup_page():
 def backup_export():
     """Скачать копию БД: делаем консистентную копию через SQLite backup API."""
     from os import path as _p
+    from io import BytesIO
     _p.exists(DB_PATH) or abort(404)
-    _, tmp = tempfile.mkstemp(suffix=".db")
-    src = sqlite3.connect(DB_PATH)
-    dst = sqlite3.connect(tmp)
-    with dst:
-        src.backup(dst)
-    src.close(); dst.close()
+    # Создаём консистентную копию во временном файле, читаем её в память и сразу
+    # удаляем файл — никаких «висячих» temp-файлов/дескрипторов после ответа
+    # (и это надёжно работает на любой ОС, включая Windows с блокировкой файлов).
+    fd, tmp = tempfile.mkstemp(suffix=".db")
+    os.close(fd)  # закрываем дескриптор от mkstemp, иначе на Windows удаление заблокировано
+    try:
+        src = sqlite3.connect(DB_PATH)
+        dst = sqlite3.connect(tmp)
+        with dst:
+            src.backup(dst)
+        src.close(); dst.close()
+        with open(tmp, "rb") as fh:
+            data = fh.read()
+    finally:
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     fname = f"teambook_backup_{stamp}.db"
-    return send_file(tmp, as_attachment=True, download_name=fname,
+    return send_file(BytesIO(data), as_attachment=True, download_name=fname,
                      mimetype="application/vnd.sqlite3", max_age=0)
 
 
@@ -1267,6 +1597,32 @@ def backup_import():
             os.remove(upload_path)
 
     if not ok:
+        return redirect(url_for("backup_page"))
+
+    # Мигрируем загруженную копию ДО активации: в старой БД могут отсутствовать
+    # новые колонки/таблицы (например tag в todo_items) — без этого /todo упадёт
+    # с «no such column». При ошибке исходная БД не трогается.
+    migrate_ok = True
+    try:
+        mcon = sqlite3.connect(upload_path)
+        mcon.row_factory = sqlite3.Row  # _apply_migrations/_repair_dangling_fk требуют named-access
+        try:
+            _apply_migrations(mcon)
+            mcon.commit()
+            # строгая проверка после миграции: одной успешной миграции мало,
+            # схема и внешние ключи должны быть целыми до активации
+            errs = _validate_db_schema(mcon)
+            if errs:
+                raise ValueError("схема после миграции невалидна: %s" % "; ".join(errs))
+        finally:
+            mcon.close()
+    except Exception as e:
+        migrate_ok = False
+        flash(f"Не удалось привести файл к актуальной схеме: {e}", "error")
+
+    if not migrate_ok:
+        if os.path.exists(upload_path):
+            os.remove(upload_path)
         return redirect(url_for("backup_page"))
 
     # Бэкап текущей БД перед перезаписью
@@ -1395,6 +1751,36 @@ def _fmt_date(v):
     return s[:10] if s else ""
 
 
+def _safe_sheet_name(s, limit=31):
+    """Excel-запрещённые символы []:*?/\ и апострофы + лимит длины листа."""
+    import re
+    s = re.sub(r"[\[\]:*/?\\]", "", str(s or "")).replace("'", "")
+    return (s[:limit].strip() or "Отчёт")
+
+
+def _xml_escape(s):
+    """Экранирует пользовательский текст перед Paragraph (reportlab): иначе
+    незакрытый '<b>' или '&' сломают рендер PDF."""
+    from xml.sax.saxutils import escape
+    return escape(str(s if s is not None else ""))
+
+
+def _send_file_cleanup(src, name, mimetype):
+    """send_file + удаление временного файла (src как путь) после ответа,
+    чтобы отчёты не оставляли мусор в temp."""
+    resp = send_file(src, as_attachment=True, download_name=name,
+                     mimetype=mimetype, max_age=0)
+    if isinstance(src, str):
+        @resp.call_on_close
+        def _rm_report_tmp():
+            try:
+                if os.path.exists(src):
+                    os.remove(src)
+            except Exception:
+                pass
+    return resp
+
+
 def _build_report_rows(data):
     """Превратить данные отчёта в плоские строки для Excel."""
     base = ["Сотрудник", "Отдел", "Должность", "Зарплата", "Дата приёма"]
@@ -1489,7 +1875,7 @@ def _build_report_pdf(data, title):
 
     table_data = [[Paragraph(h.replace(":", ":<br/>"), hstyle) for h in headers]]
     for r in rows:
-        table_data.append([Paragraph(short(v), base) for v in r])
+        table_data.append([Paragraph(_xml_escape(short(v)), base) for v in r])
 
     col_w = [28*mm, 14*mm, 20*mm, 11*mm, 12*mm] + [18*mm]*(len(headers)-5)
     t = Table(table_data, colWidths=col_w, repeatRows=1)
@@ -1528,7 +1914,7 @@ def _build_employee_pdf(data, title):
     h3 = ParagraphStyle("H3", parent=base, fontSize=10, leading=13, spaceAfter=4, spaceBefore=6)
     title_style = ParagraphStyle("Title", parent=base, fontSize=16, leading=20, spaceAfter=10)
 
-    story = [Paragraph(title, title_style)]
+    story = [Paragraph(_xml_escape(title), title_style)]
 
     item = data[0]
     # стиль подписей (label) и значений — ОБЯЗАТЕЛЬНО с кириллическим шрифтом
@@ -1536,11 +1922,11 @@ def _build_employee_pdf(data, title):
                               leading=11, textColor=colors.HexColor("#33415C"))
     val_st = ParagraphStyle("Val", parent=base, fontName=fn, fontSize=9, leading=11)
     story.append(Table(
-        [[Paragraph("Сотрудник", label_st), Paragraph(item["name"] or "—", val_st)],
-         [Paragraph("Отдел", label_st), Paragraph(item["department"] or "—", val_st)],
-         [Paragraph("Должность", label_st), Paragraph(item["position"] or "—", val_st)],
-         [Paragraph("Зарплата", label_st), Paragraph(item["salary"] or "—", val_st)],
-         [Paragraph("Дата приёма", label_st), Paragraph(_fmt_date(item["hire_date"]) or "—", val_st)]],
+        [[Paragraph("Сотрудник", label_st), Paragraph(_xml_escape(item["name"] or "—"), val_st)],
+         [Paragraph("Отдел", label_st), Paragraph(_xml_escape(item["department"] or "—"), val_st)],
+         [Paragraph("Должность", label_st), Paragraph(_xml_escape(item["position"] or "—"), val_st)],
+         [Paragraph("Зарплата", label_st), Paragraph(_xml_escape(item["salary"] or "—"), val_st)],
+         [Paragraph("Дата приёма", label_st), Paragraph(_xml_escape(_fmt_date(item["hire_date"]) or "—"), val_st)]],
         colWidths=[40*mm, 130*mm],
         style=TableStyle([
             ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#9AA7BC")),
@@ -1563,15 +1949,15 @@ def _build_employee_pdf(data, title):
         for field, label in sem_cols:
             val = (rec.get(field) or "").strip()
             story.append(Paragraph(f"<b>{label}:</b>", h3))
-            story.append(Paragraph(val if val else "—", base))
+            story.append(Paragraph(_xml_escape(val) if val else "—", base))
             story.append(Spacer(1, 3))
 
     story.append(PageBreak())
     story.append(Paragraph("Встречи 1-на-1", h2))
     if item["meetings"]:
         for m in item["meetings"]:
-            story.append(Paragraph(f"<b>{_fmt_date(m['date'])}</b>", h3))
-            story.append(Paragraph(m["summary"] or "—", base))
+            story.append(Paragraph(f"<b>{_xml_escape(_fmt_date(m['date']))}</b>", h3))
+            story.append(Paragraph(_xml_escape(m["summary"]) if m["summary"] else "—", base))
             story.append(Spacer(1, 5))
     else:
         story.append(Paragraph("Встреч не было.", base))
@@ -1622,7 +2008,7 @@ def report_all():
         mimetype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         src = tmp.name
 
-    return send_file(src, as_attachment=True, download_name=name, mimetype=mimetype, max_age=0)
+    return _send_file_cleanup(src, name, mimetype)
 
 
 @app.route("/employee/<int:eid>/report")
@@ -1650,7 +2036,7 @@ def report_employee(eid):
             flash("Модуль openpyxl недоступен на сервере", "error")
             return redirect(url_for("employee_view", eid=eid))
         headers, rows = _build_report_rows(data)
-        wb = Workbook(); ws = wb.active; ws.title = f"{data[0]['name'][:25]}"
+        wb = Workbook(); ws = wb.active; ws.title = _safe_sheet_name(data[0]["name"])
         ws.append(headers)
         for cell in ws[1]:
             cell.font = Font(bold=True, color="FFFFFF")
@@ -1679,7 +2065,7 @@ def report_employee(eid):
         mimetype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         src = tmp.name
 
-    return send_file(src, as_attachment=True, download_name=name, mimetype=mimetype, max_age=0)
+    return _send_file_cleanup(src, name, mimetype)
 
 
 # --------------------------------------------------------------------------- #
@@ -1824,6 +2210,7 @@ def _purge_stale_trash(db):
     db.execute(
         "DELETE FROM kb_tasks WHERE deleted_at != '' AND deleted_at < ?",
         (month_ago,))
+    db.commit()  # иначе GET /board откатит удаление при закрытии соединения
 
 
 @app.route("/board")
@@ -1888,10 +2275,13 @@ def board_column_delete(cid):
     elif col["locked"]:
         flash("Системный столбец нельзя удалить", "error")
     else:
-        cnt = db.execute("SELECT COUNT(*) c FROM kb_tasks WHERE column_id=? AND deleted_at=''",
+        # блокируем удаление, если в столбце есть ЛЮБЫЕ задачи (включая архивные и
+        # в корзине), иначе удаление выставит им column_id=NULL по FK и после
+        # восстановления карточка станет невидимой
+        cnt = db.execute("SELECT COUNT(*) c FROM kb_tasks WHERE column_id=?",
                          (cid,)).fetchone()["c"]
         if cnt:
-            flash(f"Сначала перенесите или удалите задачи из «{cnt}» этого столбца", "error")
+            flash(f"Сначала перенесите или удалите все задачи из этого столбца ({cnt})", "error")
         else:
             db.execute("DELETE FROM kb_columns WHERE id=?", (cid,))
             db.commit()
@@ -2111,10 +2501,21 @@ def board_trash():
 def board_task_restore(tid):
     """Вернуть задачу из архива/корзины на доску."""
     db = get_db()
+    t = db.execute("SELECT * FROM kb_tasks WHERE id=?", (tid,)).fetchone()
+    if not t:
+        abort(404)
+    # если колонка отсутствует/удалена — вернуть задачу в доступный столбец
+    column_id = t["column_id"]
+    if column_id is None or not db.execute(
+            "SELECT 1 FROM kb_columns WHERE id=?", (column_id,)).fetchone():
+        first = db.execute(
+            "SELECT id FROM kb_columns WHERE kind='kanban' "
+            "ORDER BY sort_order, id LIMIT 1").fetchone()
+        column_id = first["id"] if first else None
     db.execute(
-        "UPDATE kb_tasks SET archived_at='', deleted_at='', "
+        "UPDATE kb_tasks SET archived_at='', deleted_at='', column_id=?, "
         "updated_at=datetime('now') WHERE id=?",
-        (tid,))
+        (column_id, tid))
     db.commit()
     flash("Задача возвращена", "ok")
     return redirect(request.referrer or url_for("board"))
@@ -2182,19 +2583,19 @@ def todo_archive():
         "SELECT * FROM todo_items WHERE status='done' AND done_date=? "
         "ORDER BY id DESC", (day,)
     ).fetchall()
-    prev = next = None
+    prev_d = next_d = None
     try:
         from datetime import timedelta
         d = datetime.strptime(day, "%Y-%m-%d").date()
         if d - timedelta(days=1) >= datetime(2026, 1, 1).date():
-            prev = (d - timedelta(days=1)).isoformat()
+            prev_d = (d - timedelta(days=1)).isoformat()
         if d < date.today():
-            nxt = (d + timedelta(days=1)).isoformat()
+            next_d = (d + timedelta(days=1)).isoformat()
     except Exception:
         pass
     return render_template(
             "todo_archive.html", archive=items, day=day,
-            prev=prev, next=next, todays=today_s)
+            prev=prev_d, next=next_d, todays=today_s)
 
 
 @app.route("/todo/add", methods=["POST"])
@@ -2297,9 +2698,10 @@ def todo_delegate(todo):
             "SELECT id FROM kb_columns WHERE kind='kanban' "
             "ORDER BY sort_order, id LIMIT 1").fetchone()
         db.execute(
-            "INSERT INTO kb_tasks (title, column_id, description) VALUES (?,?,?)",
+            "INSERT INTO kb_tasks (title, column_id, description, due_date) "
+            "VALUES (?,?,?,?)",
             (t["title"], first["id"] if first else None,
-             "Делегировано из личного todo"))
+             "Делегировано из личного todo", t["due_date"] or ""))
         db.execute("DELETE FROM todo_items WHERE id=?", (todo,))
         db.commit()
         flash("Отправлено на канбан", "ok")
