@@ -160,7 +160,7 @@ check("Корзина→удалить столбец→восстановить
 dbrawcommit("DELETE FROM kb_tasks WHERE id=?", (tk["id"],))
 
 # =====================================================================
-# 6) Автоочистка корзины (GET /board) фиксирует удаление (commit)
+# 6) GET /board не изменяет БД; очистка выполняется обслуживанием
 # =====================================================================
 post("/board/column/add", data={"name": "Кол Auto Purge"})
 col2 = dbraw("SELECT id FROM kb_columns WHERE name='Кол Auto Purge'")[0]
@@ -168,9 +168,12 @@ post("/board/task/add", data={"title": "Старый мусор", "column_id": s
 tk2 = dbraw("SELECT id FROM kb_tasks WHERE title='Старый мусор'")[0]
 old_ts = (datetime.datetime.now() - datetime.timedelta(days=40)).strftime("%Y-%m-%d %H:%M:%S")
 dbrawcommit("UPDATE kb_tasks SET deleted_at=? WHERE id=?", (old_ts, tk2["id"]))
-c.get("/board")  # должен запустить автоочистку
+c.get("/board")
 left = dbraw("SELECT COUNT(*) c FROM kb_tasks WHERE id=? AND deleted_at!=?", (tk2["id"], "not"))
-check("Автоочистка корзины коммитится (GET удаляет старый мусор)",
+check("GET доски не удаляет старый мусор",
+      len(dbraw("SELECT 1 FROM kb_tasks WHERE id=?", (tk2["id"],))) == 1)
+appmod.run_maintenance()
+check("maintenance удаляет старый мусор",
       len(dbraw("SELECT 1 FROM kb_tasks WHERE id=?", (tk2["id"],))) == 0)
 dbrawcommit("DELETE FROM kb_tasks WHERE id=?", (tk2["id"],))
 post(f"/board/column/{col2['id']}/delete", follow_redirects=True)

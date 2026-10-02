@@ -327,6 +327,16 @@ def init_db():
     db.close()
 
 
+def run_maintenance():
+    """Запускает обслуживающие операции вне HTTP GET-запросов."""
+    db = _connect_db()
+    try:
+        _purge_stale_trash(db)
+        db.commit()
+    finally:
+        db.close()
+
+
 def _apply_migrations(db):
     """Создаёт/приводит схему к актуальному виду. Вызывается и при старте, и перед
     активацией восстанавливаемой БД (backup/import) — чтобы импортированный файл
@@ -2284,9 +2294,6 @@ def _board_ctx(db, month=None, year=None):
     счётчиками архива/корзины, списком активных сотрудников и данными ганта
     на выбранный месяц.
     """
-    # авточистка корзины: раз в месяц удаляем из неё задачи окончательно
-    _purge_stale_trash(db)
-
     # на канбане — только обычные столбцы (kind='kanban', включая Бэклог)
     columns = db.execute(
         "SELECT * FROM kb_columns WHERE kind='kanban' ORDER BY sort_order, id"
@@ -2396,12 +2403,13 @@ def _board_ctx(db, month=None, year=None):
 
 
 def _purge_stale_trash(db):
-    """Окончательно удаляет задачи из корзины старше 30 дней (раз в месяц)."""
-    month_ago = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
+    """Окончательно удаляет задачи из корзины старше 30 дней."""
+    # SQLite datetime('now') хранит UTC; порог считаем в той же шкале времени.
+    month_ago = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
     db.execute(
         "DELETE FROM kb_tasks WHERE deleted_at != '' AND deleted_at < ?",
         (month_ago,))
-    db.commit()  # иначе GET /board откатит удаление при закрытии соединения
+
 
 
 @app.route("/board")

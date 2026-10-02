@@ -24,7 +24,7 @@ if [ -f /app/data/.restore-request.json ]; then
   if [ "$RESTORE_STATUS" -eq 76 ]; then exit 76; fi
 fi
 
-python -c "import app; app.init_db()" || exit 1
+python -c "import app; app.init_db(); app.run_maintenance()" || exit 1
 python /app/bot.py > /app/data/teambot_supervisor.log 2>&1 &
 BOT_PID=$!
 gunicorn --bind 0.0.0.0:${PORT:-5000} --workers ${WEB_CONCURRENCY:-2} wsgi:app &
