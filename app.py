@@ -12,6 +12,7 @@ import secrets
 import time
 import shutil
 import tempfile
+from contextlib import contextmanager
 from datetime import datetime, date, timedelta
 from functools import wraps
 
@@ -48,6 +49,8 @@ except Exception:
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("HR_DATA_DIR", os.path.join(BASE_DIR, "data"))
 DB_PATH = os.path.join(DATA_DIR, "hr_notes.db")
+MAINTENANCE_LOCK = os.path.join(DATA_DIR, ".maintenance.lock")
+RESTORE_REQUEST = os.path.join(DATA_DIR, ".restore-request.json")
 
 ADMIN_PASSWORD = os.environ.get("HR_PASSWORD", "")
 
@@ -105,12 +108,45 @@ SEMESTERS = {"1H": "I полугодие (янв–июн)", "2H": "II полу�
 # --------------------------------------------------------------------------- #
 # БД
 # --------------------------------------------------------------------------- #
+def _connect_db(path=None):
+    path = path or DB_PATH
+    db = sqlite3.connect(path, timeout=10)
+    db.row_factory = sqlite3.Row
+    db.execute("PRAGMA foreign_keys = ON")
+    db.execute("PRAGMA busy_timeout = 10000")
+    if path == DB_PATH:
+        db.execute("PRAGMA journal_mode = WAL")
+        db.execute("PRAGMA synchronous = NORMAL")
+    return db
+
+
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(DB_PATH)
-        g.db.row_factory = sqlite3.Row
-        g.db.execute("PRAGMA foreign_keys = ON")
+        g.db = _connect_db()
     return g.db
+
+
+@contextmanager
+def _maintenance_lock():
+    """Атомарный lock для операций без онлайн-замены активной БД."""
+    os.makedirs(DATA_DIR, exist_ok=True)
+    try:
+        fd = os.open(MAINTENANCE_LOCK, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError:
+        # Файл живёт в container volume: после аварийного рестарта старый PID уже
+        # не может владеть им, поэтому entrypoint очищает его до запуска процессов.
+        raise RuntimeError("обслуживание базы уже выполняется")
+    try:
+        os.write(fd, str(os.getpid()).encode("ascii")); os.close(fd)
+        yield
+    finally:
+        try: os.remove(MAINTENANCE_LOCK)
+        except FileNotFoundError: pass
+
+
+def _unique_restore_backup_path():
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    return DB_PATH + ".pre_restore_" + stamp + ".bak"
 
 
 @app.teardown_appcontext
@@ -266,8 +302,7 @@ CREATE TABLE IF NOT EXISTS todo_items (
 
 def init_db():
     os.makedirs(DATA_DIR, exist_ok=True)
-    db = sqlite3.connect(DB_PATH)
-    db.row_factory = sqlite3.Row
+    db = _connect_db()
     _apply_migrations(db)
     db.commit()
     db.close()
@@ -1727,14 +1762,33 @@ def backup_import():
             os.remove(upload_path)
         return redirect(url_for("backup_page"))
 
-    # Бэкап текущей БД перед перезаписью
-    backup_path = DB_PATH + ".pre_restore.bak"
-    if os.path.exists(DB_PATH):
-        shutil.copy2(DB_PATH, backup_path)
-    os.replace(upload_path, DB_PATH)
+    # Онлайн-замена SQLite/WAL небезопасна: активные workers держат старый inode.
+    # Передаём проверенную БД PID1; entrypoint остановит Gunicorn и bot, заменит БД
+    # при отсутствии открытых соединений, затем перезапустит весь контейнер.
+    import json
+    staged = os.path.join(DATA_DIR, ".restore-staged-%s.db" % secrets.token_hex(8))
+    try:
+        if os.path.exists(RESTORE_REQUEST):
+            raise RuntimeError("восстановление уже ожидает активации")
+        os.replace(upload_path, staged)
+        os.chmod(staged, 0o600)
+        request_tmp = RESTORE_REQUEST + ".tmp-" + secrets.token_hex(4)
+        fd = os.open(request_tmp, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump({"staged": staged, "requested_at": datetime.now().isoformat()}, fh)
+            fh.flush(); os.fsync(fh.fileno())
+        # Не перезаписываем уже ожидающий request.
+        os.link(request_tmp, RESTORE_REQUEST)
+        os.remove(request_tmp)
+    except Exception as e:
+        for path in (upload_path, staged):
+            try: os.remove(path)
+            except FileNotFoundError: pass
+        flash("Не удалось поставить восстановление в очередь: %s" % e, "error")
+        return redirect(url_for("backup_page"))
 
-    flash("База восстановлена из файла.", "ok")
-    return redirect(url_for("index"))
+    flash("База проверена. Восстановление началось; приложение перезапустится.", "ok")
+    return redirect(url_for("login"))
 
 
 # --------------------------------------------------------------------------- #

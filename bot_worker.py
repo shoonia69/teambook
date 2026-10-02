@@ -35,9 +35,10 @@ PENDING = {}
 
 
 def db():
-    c = sqlite3.connect(DB_PATH)
+    c = sqlite3.connect(DB_PATH, timeout=10)
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA foreign_keys = ON")
+    c.execute("PRAGMA busy_timeout = 10000")
     return c
 
 
@@ -48,9 +49,10 @@ from contextlib import contextmanager
 def _db():
     """Открывает/закрывает соединение (коммит+close), даже при исключении —
     чтобы сбойный INSERT (например нарушение FK) не оставлял открытый lock."""
-    c = sqlite3.connect(DB_PATH)
+    c = sqlite3.connect(DB_PATH, timeout=10)
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA foreign_keys = ON")
+    c.execute("PRAGMA busy_timeout = 10000")
     try:
         yield c
     finally:

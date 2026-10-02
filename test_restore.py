@@ -18,6 +18,7 @@ os.environ["HR_DATA_DIR"] = tmp
 os.environ["HR_PASSWORD"] = "restore-pass"
 
 import app as appmod
+import restore_offline as restoremod
 
 app = appmod.app
 app.config["TESTING"] = True
@@ -99,6 +100,20 @@ def _safe_get(url):
         return -1
 
 
+def _activate_pending_restore():
+    import json
+    with open(appmod.RESTORE_REQUEST, encoding="utf-8") as fh:
+        staged = json.load(fh)["staged"]
+    os.chmod(staged, 0o600)
+    restoremod.DATA = tmp
+    restoremod.REQ = appmod.RESTORE_REQUEST
+    restoremod.LOCK = os.path.join(tmp, ".maintenance.lock")
+    restoremod.FATAL = os.path.join(tmp, ".restore-fatal")
+    restoremod.CURRENT = appmod.DB_PATH
+    restoremod.NAME_RE = __import__("re").compile(r"^\.restore-staged-[0-9a-f]{16}\.db$")
+    return restoremod.activate()
+
+
 # До импорта в активной БД маркера НЕТ (доказ. что проверка не ложноположительна)
 db0 = _open(appmod.DB_PATH)
 pre_names = [r["name"] for r in db0.execute("SELECT name FROM employees").fetchall()]
@@ -110,6 +125,7 @@ with open(up_path, "rb") as f:
     data = f.read()
 r = _wrap_rpost("/backup/import", data={"dbfile": (BytesIO(data), "old_restore.db")},
                 content_type="multipart/form-data", follow_redirects=True)
+activate_status = _activate_pending_restore()
 
 db1 = _open(appmod.DB_PATH)
 post_names = [r["name"] for r in db1.execute("SELECT name FROM employees").fetchall()]
@@ -122,6 +138,8 @@ db1.close()
 check("A: import вернул успех (не flash ошибки)",
       "произошла ошибка" not in r.get_data(as_text=True).lower()
       and "Не удалось привести файл" not in r.get_data(as_text=True))
+check("A: offline activation запросила restart", activate_status == 75,
+      extra="status=%d" % activate_status)
 check("A: АКТИВНАЯ БД содержит уникальный маркер сотрудника (импорт реально активирован)",
       MARK_EMP in post_names, extra="names=%s" % post_names)
 check("A: АКТИВНАЯ БД содержит уникальный маркер задачи todo", MARK_TODO in todo_titles,
@@ -438,12 +456,14 @@ with open(_rtp, "rb") as f:
 _rr = _wrap_rpost("/backup/import", data={"dbfile": (BytesIO(_rt), "roundtrip.db")},
                   content_type="multipart/form-data", follow_redirects=True)
 _rth = _rr.get_data(as_text=True).lower()
+_rt_status = _activate_pending_restore()
 _dbx = _open(appmod.DB_PATH)
 _rtnames = [r["name"] for r in _dbx.execute("SELECT name FROM employees").fetchall()]
 _dbx.close()
 os.remove(_rtp)
 check("F: актуальная свежая БД импортируется успешно (success flash, нет error)",
-      "не удалось привести файл" not in _rth and "база восстановлена" in _rth)
+      "не удалось привести файл" not in _rth and _rt_status == 75,
+      extra="status=%d" % _rt_status)
 check("F: маркер round-trip активирован (импорт реально заменил БД)",
       RT_MARK in _rtnames, extra="names=%s" % _rtnames)
 
