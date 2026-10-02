@@ -297,6 +297,25 @@ CREATE TABLE IF NOT EXISTS todo_items (
     tag           TEXT DEFAULT '',
     created_at    TEXT DEFAULT (datetime('now'))
 );
+
+-- Прикладные индексы для наиболее частых списков, счётчиков и уведомлений.
+"""
+
+INDEX_SCHEMA = """
+CREATE INDEX IF NOT EXISTS idx_login_failures_ip_time ON login_failures(ip, failed_at);
+CREATE INDEX IF NOT EXISTS idx_employee_history_employee_date ON employee_history(employee_id, change_date DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_meetings_employee_date ON meetings(employee_id, date DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_problems_employee_id ON problems(employee_id, id DESC);
+CREATE INDEX IF NOT EXISTS idx_year_records_year ON year_records(year);
+CREATE INDEX IF NOT EXISTS idx_kb_columns_kind_order ON kb_columns(kind, sort_order, id);
+CREATE INDEX IF NOT EXISTS idx_kb_tasks_live ON kb_tasks(id DESC) WHERE archived_at = '' AND deleted_at = '';
+CREATE INDEX IF NOT EXISTS idx_kb_tasks_live_due ON kb_tasks(due_date, id) WHERE archived_at = '' AND deleted_at = '' AND due_date != '';
+CREATE INDEX IF NOT EXISTS idx_kb_tasks_deleted ON kb_tasks(deleted_at DESC, id DESC) WHERE deleted_at != '';
+CREATE INDEX IF NOT EXISTS idx_kb_tasks_archived ON kb_tasks(archived_at DESC, id DESC) WHERE archived_at != '' AND deleted_at = '';
+
+CREATE INDEX IF NOT EXISTS idx_todo_open_due ON todo_items(due_date, id) WHERE status != 'done' AND due_date != '';
+CREATE INDEX IF NOT EXISTS idx_todo_status_order ON todo_items(status, sort_order, id);
+CREATE INDEX IF NOT EXISTS idx_todo_done_date ON todo_items(done_date, id) WHERE status = 'done';
 """
 
 
@@ -457,6 +476,10 @@ def _apply_migrations(db):
             print("[TeamBook] Откат Эйзенхауэра: удалена колонка emi из kb_tasks")
         except Exception:
             pass  # DROP COLUMN может быть недоступен в старых SQLite — колонка останется, код её не использует
+
+    # Индексы создаём после всех ALTER TABLE, чтобы старые backup-файлы сначала
+    # получили недостающие колонки, используемые partial-индексами.
+    db.executescript(INDEX_SCHEMA)
 
 
 def _repair_dangling_fk(db, table, fk_col):
