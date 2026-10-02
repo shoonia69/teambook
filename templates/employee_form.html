@@ -52,12 +52,12 @@
         </div>
       </div>
     </div>
-    <div class="btn-row">
-      <button class="btn primary" type="submit">Сохранить</button>
-      <a class="btn" href="{{ url_for('employee_view', eid=emp.id) if emp.id else url_for('index') }}">Отмена</a>
-      <span class="sub" style="margin-left:auto;align-self:center">
+    <div class="form-actions">
+      <span class="form-note">
         Нужной должности или отдела нет? <a href="{{ url_for('catalogs') }}">Создать в справочнике</a>
       </span>
+      <button class="btn primary" type="submit">Сохранить</button>
+      <a class="btn" href="{{ url_for('employee_view', eid=emp.id) if emp.id else url_for('index') }}">Отмена</a>
     </div>
   </form>
 </div>

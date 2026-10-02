@@ -2,8 +2,8 @@
 {% block title %}Мои задачи · TeamBook{% endblock %}
 {% block content %}
 
-<div class="toolbar">
-  <h2 style="margin:0">📋 Мои задачи</h2>
+<div class="page-head">
+  <h2>📋 Мои задачи</h2>
   <span class="sub" style="font-size:13px">
     Новые задачи — в 📥 Бэклог, оттуда перетаскивайте в квадранты матрицы.
   </span>
@@ -12,7 +12,7 @@
   </div>
 
   <!-- поиск и фильтр по тегу — самый верх страницы -->
-  <div class="todo-filterbar">
+  <div class="compact-filter">
       <input type="text" id="todoSearch" placeholder="Поиск / (клавиша «/»)" oninput="todoApplyFilter()">
       {% if all_tags %}
       <select id="todoTagFilter" onchange="todoApplyFilter()">
@@ -44,7 +44,7 @@
         <span class="todo-title">{{ t.title }}</span>
         {% if t.due_date %}<span class="todo-due {% if is_over %}over{% endif %}" title="Срок">{{ t.due_date[5:] }}{% if is_over %} ⚠{% endif %}</span>{% endif %}
         {% if t.tag %}<span class="todo-tag">{{ t.tag }}</span>{% endif %}
-        <button class="btn btn-xs" type="button" onclick="openTodo({{ t.id }})" title="Редактировать">✏</button>
+        <button class="btn btn-xs" type="button" onclick="openTodo({{ t.id }}, this)" title="Редактировать">✏</button>
         <div class="todo-actions">
           <form method="post" action="{{ url_for('todo_up', todo=t.id) }}" style="display:inline;margin:0">
             <button class="btn btn-xs" type="submit" title="Выше">↑</button>
@@ -88,7 +88,7 @@
             <span class="todo-title">{{ t.title }}</span>
             {% if t.due_date %}<span class="todo-due {% if is_over %}over{% endif %}" title="Срок">{{ t.due_date[5:] }}{% if is_over %} ⚠{% endif %}</span>{% endif %}
             {% if t.tag %}<span class="todo-tag">{{ t.tag }}</span>{% endif %}
-            <button class="btn btn-xs" type="button" onclick="openTodo({{ t.id }})" title="Редактировать">✏</button>
+            <button class="btn btn-xs" type="button" onclick="openTodo({{ t.id }}, this)" title="Редактировать">✏</button>
             <div class="todo-actions">
               <form method="post" action="{{ url_for('todo_done', todo=t.id) }}" style="display:inline;margin:0">
                 <button class="btn btn-xs primary" type="submit" title="Сделано">✓</button>
@@ -113,11 +113,11 @@
 </div>
 
 <!-- модалка редактирования задачи -->
-<div class="modal-overlay" id="todo-modal" onclick="if(event.target===this)closeTodo();">
-  <div class="modal-card">
+<div class="modal-overlay" id="todo-modal">
+  <div class="modal-card" tabindex="-1">
     <div class="modal-head">
-      <span>Редактировать задачу</span>
-      <button class="modal-x" onclick="closeTodo()" title="Закрыть">✕</button>
+      <span class="modal-title" id="todo-modal-title">Редактировать задачу</span>
+      <button class="modal-x" id="todo-modal-close" title="Закрыть" aria-label="Закрыть">✕</button>
     </div>
     <div class="modal-body" id="todo-modal-body"></div>
   </div>
@@ -151,29 +151,38 @@ function todoDrop(ev, status) {
   ev.preventDefault();
   ev.currentTarget.classList.remove('drag-over');
   if (todoDraggingId === null) return;
+  var id = todoDraggingId;
   var fd = new FormData();
   fd.append('status', status);
-  fetch('/todo/' + todoDraggingId + '/move', { method: 'POST', body: fd, headers: { 'X-CSRF-Token': window.CSRF } })
-    .then(function () { location.reload(); });
+  window.postForm({
+    url: '/todo/' + id + '/move', body: fd, method: 'POST', checkOk: true,
+    errText: 'Не удалось переместить задачу.',
+    onSuccess: function () { location.reload(); }
+  });
   todoDraggingId = null;
 }
 
-/* Модалка редактирования (заголовок + срок + тег) */
-function openTodo(id) {
+/* Модалка редактирования (доступный диалог: фокус-ловушка, dirty-state, возврат фокуса) */
+var todoModal = window.initModal({
+  overlay: document.getElementById('todo-modal'),
+  getBody: function () { return document.getElementById('todo-modal-body'); },
+  getTitle: function () { return document.getElementById('todo-modal-title'); },
+  getForm: function () { return document.getElementById('todo-modal').querySelector('form'); },
+  dirtyScope: document.getElementById('todo-modal')
+});
+function openTodo(id, trigger) {
+  var returnFocus = trigger || document.activeElement;
   fetch('/todo/' + encodeURIComponent(id) + '/card')
     .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
     .then(function (html) {
       document.getElementById('todo-modal-body').innerHTML = html;
-      document.getElementById('todo-modal').style.display = 'flex';
-      var inp = document.getElementById('todo-modal').querySelector('input[name="title"]');
-      if (inp) inp.focus();
+      window.todoModal && todoModal.setDirty(false);
+      todoModal.open(returnFocus);
     })
     .catch(function () { alert('Не удалось открыть задачу'); });
 }
-function closeTodo() {
-  document.getElementById('todo-modal').style.display = 'none';
-  document.getElementById('todo-modal-body').innerHTML = '';
-}
+function closeTodo() { if (todoModal) todoModal.close(); }
+document.getElementById('todo-modal-close').addEventListener('click', function (e) { e.stopPropagation(); if (todoModal) todoModal.close(); });
 
 
 /* Поиск по названию + фильтр по тегу (бэклог и квадранты) */
@@ -194,13 +203,15 @@ function todoApplyFilter() {
 }
 
 document.addEventListener('keydown', function (e) {
-  /* / — фокус на добавление новой задачи */
-  if (e.key === '/' && document.activeElement !== document.getElementById('todoNewTitle')) {
+  /* Пакет 2: хоткеи не перехватывают ввод в полях/composition/модификаторах;
+     "/" внутри поля вводится обычным символом. */
+  if (window.hotkeyGuard(e)) return;
+  /* / — фокус на добавление новой задачи (только вне полей) */
+  if (e.key === '/' && !window.isEditableTarget(document.activeElement)) {
     var inp = document.getElementById('todoNewTitle');
     if (inp) { e.preventDefault(); inp.focus(); }
   }
-  /* Esc закрывает модалку */
-  if (e.key === 'Escape') closeTodo();
+  /* Esc закрывает модалку (проверку dirty и возврат фокуса делает initModal) */
 });
 </script>
 

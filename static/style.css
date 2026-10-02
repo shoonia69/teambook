@@ -152,6 +152,17 @@ a.stat-card.warn .stat-num { color: var(--danger); }
 .flash-ok { background: rgba(56, 217, 169, .12); border-color: var(--accent2); color: var(--accent2); }
 .flash-error { background: rgba(255, 107, 107, .12); border-color: var(--danger); color: var(--danger); }
 
+/* Пакет 2: тост асинхронных действий (role=status/alert, не перехватывает ввод) */
+.tb-toast {
+  position: fixed; top: 70px; right: 20px; z-index: 1200;
+  max-width: 360px; padding: 10px 14px; border-radius: 10px;
+  background: var(--panel2); border: 1px solid var(--border);
+  box-shadow: 0 12px 40px rgba(0,0,0,.35); font-size: 14px; color: var(--text);
+}
+.tb-toast.tb-toast-ok { border-color: var(--accent2); }
+.tb-toast.tb-toast-error { border-color: var(--danger); background: rgba(255,107,107,.12); color: var(--danger); }
+@media (max-width: 420px) { .tb-toast { left: 10px; right: 10px; max-width: none; } }
+
 /* ---------- cards ---------- */
 .card {
   background: var(--panel); border: 1px solid var(--border);
@@ -165,6 +176,35 @@ a.stat-card.warn .stat-num { color: var(--danger); }
 /* ---------- toolbar ---------- */
 .toolbar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
 .toolbar .spacer { flex: 1; }
+
+/* ---- Пакет 2: общие компоненты форм и фильтров ---- */
+/* Шапка страницы: заголовок слева, действия справа, перенос на узких экранах */
+.page-head {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
+}
+.page-head h1, .page-head h2 { margin: 0; }
+.page-head .spacer { flex: 1; }
+
+/* Компактная строка фильтров/поиска: инпуты и кнопки в одну линию, переносится без переполнения */
+.compact-filter {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 10px 14px; margin-bottom: 14px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+}
+.compact-filter input[type="text"],
+.compact-filter input[type="number"],
+.compact-filter input[type="date"],
+.compact-filter select { flex: 0 1 auto; }
+.compact-filter > .grow { flex: 1 1 160px; min-width: 120px; }
+.compact-filter .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* Единая строка действий формы: правое выравнивание, перенос кнопок */
+.form-actions {
+  display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap;
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);
+}
+.form-actions .spacer { flex: 1; }
+.form-note { margin-left: auto; align-self: center; font-size: 13px; color: var(--muted); }
 
 .year-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
 .year-tab {
@@ -461,6 +501,20 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
   display: none; align-items: flex-start; justify-content: center;
   background: rgba(0,0,0,.45); padding: 40px 16px; overflow: auto;
 }
+/* диалог: видимый фокус и доступный заголовок */
+.modal-card:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.kb-card:focus-visible, .gcal-task:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.modal-title { font-size: 16px; font-weight: 600; }
+.modal-status, .modal-alert {
+  margin-top: 10px; padding: 8px 12px; border-radius: 8px; font-size: 13px;
+  border: 1px solid;
+}
+.modal-status { background: rgba(56,217,169,.12); border-color: var(--accent2); color: var(--accent2); }
+.modal-alert { background: rgba(255,107,107,.12); border-color: var(--danger); color: var(--danger); }
+[aria-busy="true"] { opacity: .7; pointer-events: none; }
 .modal-card {
   background: var(--panel2, #fff); color: var(--text);
   border: 1px solid var(--border); border-radius: 10px;
@@ -521,6 +575,37 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
   .kb-filter-bar select { max-width: 100%; }
   .kb-chk { font-size: 12px; }
   .container { padding: 0 10px; }
+}
+/* ---- Пакет 2: узкие экраны 320–390px — без переполнения ---- */
+@media (max-width: 420px) {
+  .compact-filter { padding: 8px 10px; gap: 6px; }
+  .compact-filter input[type="text"],
+  .compact-filter input[type="number"],
+  .compact-filter input[type="date"],
+  .compact-filter select { flex: 1 1 100%; width: 100% !important; max-width: 100% !important; }
+  .compact-filter .btn { flex: 1 1 auto; }
+  .form-actions { justify-content: stretch; }
+  .form-actions .btn { flex: 1 1 auto; text-align: center; }
+  .page-head { gap: 8px; }
+  .modal-overlay { padding: 16px 8px; }
+  .modal-card { max-width: 100%; }
+  .modal-body { padding: 12px; }
+  .form-grid { gap: 12px; }
+  .tm-dates { flex-direction: column; }
+  .btn-row .btn { flex: 1 1 auto; text-align: center; }
+  .card { padding: 14px; }
+  .filters-stack .filter-row .btn { white-space: normal; }
+  /* touch-target ≥44×44 px для кнопок фильтров/форм */
+  .compact-filter .btn,
+  .form-actions .btn,
+  .btn-row .btn,
+  .kb-filter-bar .btn { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+  /* сложный элемент todo: длинное название/тег не должны ломать ширину */
+  .todo-item { flex-wrap: wrap; gap: 6px; }
+  .todo-title { flex: 1 1 100%; word-break: break-word; min-width: 0; }
+  .todo-due, .todo-tag { white-space: normal; }
+  .todo-actions { flex-wrap: wrap; }
+  .todo-actions .btn { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
 }
 
 /* ---------- личный todo (бэклог → на сегодня) ---------- */

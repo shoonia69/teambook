@@ -5,6 +5,100 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}TeamBook{% endblock %}</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script>
+/* Общие UX-хелперы загружаются до page scripts. */
+window.CSRF = "{{ csrf_token }}";
+window.isEditableTarget = function (el) {
+  return !!el && (el.matches('input, textarea, select') || el.isContentEditable);
+};
+window.hotkeyGuard = function (e) {
+  return e.isComposing || e.ctrlKey || e.altKey || e.metaKey || window.isEditableTarget(e.target);
+};
+window.tbToast = function (text, isErr) {
+  var el = document.getElementById('tb-toast');
+  if (!el) return;
+  el.textContent = text;
+  el.className = 'tb-toast ' + (isErr ? 'tb-toast-error' : 'tb-toast-ok');
+  el.setAttribute('role', isErr ? 'alert' : 'status');
+  el.hidden = false;
+  clearTimeout(el._timer);
+  el._timer = setTimeout(function () { el.hidden = true; }, 3500);
+};
+window.postForm = function (opts) {
+  var busy = opts.busy || null;
+  if (busy) { busy.setAttribute('aria-busy', 'true'); busy.disabled = true; }
+  return fetch(opts.url, {
+    method: opts.method || 'POST', body: opts.body,
+    headers: { 'X-CSRF-Token': window.CSRF }
+  }).then(function (r) {
+    if (opts.checkOk && !r.ok) return Promise.reject(new Error(String(r.status)));
+    if (opts.onSuccess) opts.onSuccess(r);
+    return r;
+  }).catch(function (err) {
+    window.tbToast(opts.errText || 'Не удалось выполнить действие.', true);
+    if (opts.onError) opts.onError(err);
+    return null;
+  }).finally(function () {
+    if (busy) { busy.removeAttribute('aria-busy'); busy.disabled = false; }
+  });
+};
+window.initModal = function (opts) {
+  var overlay = opts.overlay;
+  var card = overlay.querySelector('.modal-card');
+  var lastTrigger = null;
+  var dirty = false;
+  var inerted = [];
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  var title = opts.getTitle && opts.getTitle();
+  if (title && title.id) overlay.setAttribute('aria-labelledby', title.id);
+  function focusables() {
+    return Array.from(overlay.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'))
+      .filter(function (el) { return !el.disabled && el.offsetParent !== null; });
+  }
+  function trap(e) {
+    if (e.key !== 'Tab') return;
+    var list = focusables();
+    if (!list.length) { e.preventDefault(); card.focus(); return; }
+    var first = list[0], last = list[list.length - 1];
+    if (!overlay.contains(document.activeElement)) { e.preventDefault(); (e.shiftKey ? last : first).focus(); }
+    else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  }
+  function close(force) {
+    if (dirty && !force && !confirm('Есть несохранённые изменения. Закрыть окно?')) return false;
+    overlay.style.display = 'none';
+    var body = opts.getBody && opts.getBody();
+    if (body) body.innerHTML = '';
+    inerted.forEach(function (el) { el.inert = false; el.removeAttribute('aria-hidden'); });
+    inerted = [];
+    dirty = false;
+    if (lastTrigger && lastTrigger.focus) lastTrigger.focus();
+    return true;
+  }
+  overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
+  overlay.addEventListener('input', function () { dirty = true; });
+  overlay.addEventListener('change', function () { dirty = true; });
+  overlay.addEventListener('keydown', trap);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && overlay.style.display === 'flex') close();
+  });
+  return {
+    open: function (trigger) {
+      lastTrigger = trigger || document.activeElement;
+      inerted = Array.from(document.body.children).filter(function (el) {
+        return el !== overlay && !el.contains(overlay);
+      });
+      inerted.forEach(function (el) { el.inert = true; el.setAttribute('aria-hidden', 'true'); });
+      overlay.style.display = 'flex';
+      dirty = false;
+      setTimeout(function () { var list = focusables(); (list[0] || card).focus(); }, 0);
+    },
+    close: close,
+    setDirty: function (value) { dirty = !!value; }
+  };
+};
+</script>
 </head>
 <body>
 <header class="topbar">
@@ -68,6 +162,7 @@
 </header>
 
 <main class="container">
+  <div id="tb-toast" class="tb-toast" role="status" aria-live="polite" hidden></div>
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
       <div class="flashes">
@@ -85,8 +180,6 @@
 </footer>
 
 <script>
-/* CSRF-токен сессии — для fetch()/XHR POST-запросов (заголовок X-CSRF-Token). */
-window.CSRF = "{{ csrf_token }}";
 /* Тема: светлая/тёмная, выбор сохраняется в localStorage */
 (function () {
   try {

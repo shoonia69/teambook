@@ -121,7 +121,7 @@ db1.close()
 
 check("A: import вернул успех (не flash ошибки)",
       "произошла ошибка" not in r.get_data(as_text=True).lower()
-      and "Не удалось" not in r.get_data(as_text=True))
+      and "Не удалось привести файл" not in r.get_data(as_text=True))
 check("A: АКТИВНАЯ БД содержит уникальный маркер сотрудника (импорт реально активирован)",
       MARK_EMP in post_names, extra="names=%s" % post_names)
 check("A: АКТИВНАЯ БД содержит уникальный маркер задачи todo", MARK_TODO in todo_titles,

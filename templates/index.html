@@ -2,7 +2,64 @@
 {% block title %}Сотрудники · TeamBook{% endblock %}
 {% block content %}
 
-<div class="toolbar">
+<div class="page-head">
+  <h2>Сотрудники{% if sel_department or sel_position or sel_q %}<span class="sub" style="font-size:13px"> (отфильтровано)</span>{% endif %}</h2>
+  <div class="spacer"></div>
+  <a class="btn primary" href="{{ url_for('employee_new') }}">+ Добавить сотрудника</a>
+</div>
+
+{% if stats %}
+<div class="stats-row">
+  <a class="stat-card" href="{{ url_for('board') }}">
+    <span class="stat-num">{{ stats.open_tasks }}</span>
+    <span class="stat-label">открытых задач</span>
+  </a>
+  <a class="stat-card {% if stats.overdue_tasks %}warn{% endif %}" href="{{ url_for('board') }}">
+    <span class="stat-num">{{ stats.overdue_tasks }}</span>
+    <span class="stat-label">просрочено</span>
+  </a>
+  <a class="stat-card {% if stats.problems %}warn{% endif %}" href="{{ url_for('problems_page') }}">
+    <span class="stat-num">{{ stats.problems }}</span>
+    <span class="stat-label">проблем</span>
+  </a>
+  <span class="stat-card">
+        <span class="stat-num">{{ stats.records }}</span>
+        <span class="stat-label">записей за {{ stats.year }} г.</span>
+      </span>
+      <a class="stat-card {% if stats.todo_open %}warn{% endif %}" href="{{ url_for('todo_page') }}">
+        <span class="stat-num">{{ stats.todo_open }}</span>
+        <span class="stat-label">в личном todo</span>
+      </a>
+      <a class="stat-card" href="{{ url_for('todo_archive') }}">
+        <span class="stat-num">{{ stats.todo_done_today }}</span>
+        <span class="stat-label">выполнено сегодня</span>
+      </a>
+    </div>
+{% endif %}
+
+<!-- Поиск/отдел/должность — одна компактная строка над таблицей -->
+<form class="compact-filter" method="get" action="{{ url_for('index') }}">
+  <input class="grow" type="text" id="q" name="q" value="{{ sel_q or '' }}"
+         placeholder="Поиск: имя или фамилия..." style="max-width:300px">
+  <select id="dept-filter" name="department">
+    <option value="">— отдел: все —</option>
+    {% for d in departments %}
+      <option value="{{ d }}" {{ 'selected' if d == sel_department else '' }}>{{ d }}</option>
+    {% endfor %}
+  </select>
+  <select id="pos-filter" name="position">
+    <option value="">— должность: все —</option>
+    {% for p in positions %}
+      <option value="{{ p }}" {{ 'selected' if p == sel_position else '' }}>{{ p }}</option>
+    {% endfor %}
+  </select>
+  <button class="btn small primary" type="submit">Применить</button>
+  {% if sel_q or sel_department or sel_position %}
+    <a class="btn small" href="{{ url_for('index') }}" title="Сбросить фильтры">✕ Сброс</a>
+  {% endif %}
+</form>
+
+<div class="toolbar" style="margin-bottom:14px">
   <form method="get" action="{{ url_for('report_all') }}" class="filter-row" style="margin:0">
     <label class="filter-label" for="rep-year" style="margin:0">Отчёт за год:</label>
     <input type="number" id="rep-year" name="year" min="1990" max="2100"
@@ -13,86 +70,9 @@
     </select>
     <button class="btn small primary" type="submit">⬇ Отчёт</button>
   </form>
-  <div class="spacer"></div>
-    <a class="btn primary" href="{{ url_for('employee_new') }}">+ Добавить сотрудника</a>
-  </div>
-
-  {% if stats %}
-  <div class="stats-row">
-    <a class="stat-card" href="{{ url_for('board') }}">
-      <span class="stat-num">{{ stats.open_tasks }}</span>
-      <span class="stat-label">открытых задач</span>
-    </a>
-    <a class="stat-card {% if stats.overdue_tasks %}warn{% endif %}" href="{{ url_for('board') }}">
-      <span class="stat-num">{{ stats.overdue_tasks }}</span>
-      <span class="stat-label">просрочено</span>
-    </a>
-    <a class="stat-card {% if stats.problems %}warn{% endif %}" href="{{ url_for('problems_page') }}">
-      <span class="stat-num">{{ stats.problems }}</span>
-      <span class="stat-label">проблем</span>
-    </a>
-    <span class="stat-card">
-          <span class="stat-num">{{ stats.records }}</span>
-          <span class="stat-label">записей за {{ stats.year }} г.</span>
-        </span>
-        <a class="stat-card {% if stats.todo_open %}warn{% endif %}" href="{{ url_for('todo_page') }}">
-          <span class="stat-num">{{ stats.todo_open }}</span>
-          <span class="stat-label">в личном todo</span>
-        </a>
-        <a class="stat-card" href="{{ url_for('todo_archive') }}">
-          <span class="stat-num">{{ stats.todo_done_today }}</span>
-          <span class="stat-label">выполнено сегодня</span>
-        </a>
-      </div>
-  {% endif %}
-
-<!-- Поиск по имени/фамилии -->
-<div class="card filter-panel">
-  <form class="filter-row" method="get" action="{{ url_for('index') }}">
-    <input type="hidden" name="department" value="{{ sel_department }}">
-    <input type="hidden" name="position" value="{{ sel_position }}">
-    <label class="filter-label" for="q" style="margin:0">Поиск:</label>
-    <input type="text" id="q" name="q" value="{{ sel_q or '' }}"
-           placeholder="Имя или фамилия сотрудника..." style="max-width:300px">
-    <button class="btn small" type="submit">Найти</button>
-    {% if sel_q %}
-      <a class="btn small" href="{{ url_for('index', department=sel_department, position=sel_position) }}">✕ сброс</a>
-    {% endif %}
-  </form>
-</div>
-
-<!-- Фильтры: отдел (вкладки) и должность (список) -->
-<div class="card filter-panel">
-  <div class="filter-row">
-    <span class="filter-label">Отдел:</span>
-    <a class="chips chip {{ 'active' if not sel_department else '' }}"
-       href="{{ url_for('index', position=sel_position, q=sel_q) }}">Все</a>
-    {% for d in departments %}
-      <a class="chips chip {{ 'active' if d == sel_department else '' }}"
-         href="{{ url_for('index', department=d, position=sel_position, q=sel_q) }}">{{ d }}</a>
-    {% endfor %}
-  </div>
-  <div class="filter-row">
-    <label class="filter-label" for="pos-filter" style="margin:0">Должность:</label>
-    <select id="pos-filter" name="position" onchange="location.href=this.value" style="max-width:280px">
-      <option value="{{ url_for('index', department=sel_department, q=sel_q) }}">— все должности —</option>
-      {% for p in positions %}
-        <option value="{{ url_for('index', department=sel_department, position=p, q=sel_q) }}"
-                {{ 'selected' if p == sel_position else '' }}>{{ p }}</option>
-      {% endfor %}
-    </select>
-    {% if sel_department or sel_position %}
-      <a class="btn small" href="{{ url_for('index', q=sel_q) }}">✕ Сбросить фильтры</a>
-    {% endif %}
-  </div>
 </div>
 
 <div class="card">
-  <div class="panel-title">Сотрудники
-    {% if sel_department or sel_position or sel_q %}
-      <span class="sub" style="font-size:13px">(отфильтровано)</span>
-    {% endif %}
-  </div>
   {% if employees %}
   <div class="table-wrap">
     <table>

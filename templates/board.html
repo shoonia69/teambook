@@ -2,8 +2,8 @@
 {% block title %}Доска задач · TeamBook{% endblock %}
 {% block content %}
 
-<div class="toolbar">
-  <h2 style="margin:0">Доска задач и сроки</h2>
+<div class="page-head">
+  <h2>Доска задач и сроки</h2>
   <div class="spacer"></div>
 </div>
 
@@ -62,9 +62,10 @@
             {% set who = members.get(t.id, []) %}
             {% set is_overdue = t.due_date and t.due_date < today_iso %}
             {% set is_noemp = who|length == 0 %}
-            <div class="kb-card {% if is_overdue %}ov{% endif %}"  draggable="true"
+            <div class="kb-card {% if is_overdue %}ov{% endif %}"  draggable="true" role="button" tabindex="0"
                  ondragstart="dragTask(event)" ondragend="dragEnd(event)"
-                 onclick="openCard({{ t.id }})"
+                 onclick="openCard({{ t.id }}, this)"
+                 onkeydown="openCardKey(event, {{ t.id }}, this)"
                  data-id="{{ t.id }}"
                  data-title="{{ (t.title ~ ((' ' ~ t.description) if t.description else ''))|lower }}"
                  data-emp="{% for m in who %}{{ m.name|lower }} {% endfor %}"
@@ -135,9 +136,10 @@
                 <div class="gcal-in">
                 <span class="gcal-num">{{ d.num }}</span>
                 {% for tst in d.tasks[:4] %}
-                  <span class="gcal-task {% if tst.overdue %}gcal-task-overdue{% endif %}"
+                  <span class="gcal-task {% if tst.overdue %}gcal-task-overdue{% endif %}" role="button" tabindex="0"
                         title="{{ tst.title }} · {{ tst.emp }} · {{ tst.start }} – {{ tst.due }}"
-                        onclick="openCard({{ tst.id }})">
+                        onclick="openCard({{ tst.id }}, this)"
+                        onkeydown="openCardKey(event, {{ tst.id }}, this)">
                     {{ tst.title }}{% if tst.emp %} ({{ tst.emp }}){% endif %}
                   </span>
                 {% endfor %}
@@ -186,11 +188,11 @@
 </div>
 
 <!-- модалка карточки -->
-<div class="modal-overlay" id="card-modal" onclick="if(event.target===this)closeCard();">
-  <div class="modal-card">
+<div class="modal-overlay" id="card-modal">
+  <div class="modal-card" tabindex="-1">
     <div class="modal-head">
-      <span id="card-modal-title"></span>
-      <button class="modal-x" onclick="closeCard()" title="Закрыть">✕</button>
+      <span class="modal-title" id="card-modal-title"></span>
+      <button class="modal-x" id="card-modal-close" title="Закрыть" aria-label="Закрыть">✕</button>
     </div>
     <div class="modal-body" id="card-modal-body"></div>
   </div>
@@ -226,8 +228,12 @@ function dropOn(ev, colId) {
 function moveCol(cid, beforeCid) {
   var fd = new FormData();
   fd.append('before', beforeCid === null ? '' : beforeCid);
-  fetch('/board/column/' + encodeURIComponent(cid) + '/move', { method: 'POST', body: fd, headers: { 'X-CSRF-Token': window.CSRF } })
-    .then(function () { location.reload(); });
+  window.postForm({
+    url: '/board/column/' + encodeURIComponent(cid) + '/move',
+    body: fd, method: 'POST', checkOk: true,
+    errText: 'Не удалось переместить столбец.',
+    onSuccess: function () { location.reload(); }
+  });
 }
 function dragTask(ev) {
   draggedColId = null;                          /* начало переноса карточки, а не столбца */
@@ -253,10 +259,14 @@ function dropTask(ev, colId) {
   ev.preventDefault();
   ev.currentTarget.classList.remove('drag-over');
   if (!draggedId) return;
+  var id = encodeURIComponent(draggedId);
   var fd = new FormData();
   fd.append('column_id', colId === null ? '' : colId);
-  fetch('/board/task/' + encodeURIComponent(draggedId) + '/move', { method: 'POST', body: fd, headers: { 'X-CSRF-Token': window.CSRF } })
-    .then(function () { location.reload(); });
+  window.postForm({
+    url: '/board/task/' + id + '/move', body: fd, method: 'POST', checkOk: true,
+    errText: 'Не удалось переместить задачу.',
+    onSuccess: function () { location.reload(); }
+  });
   draggedId = null;
 }
 function dropZone(ev, zone) {
@@ -265,27 +275,41 @@ function dropZone(ev, zone) {
   if (!draggedId || draggedColId) return;   /* зоны слоёв — только для карточек */
   var id = encodeURIComponent(draggedId);
   var url = zone === 'archive' ? '/board/task/' + id + '/archive' : '/board/task/' + id + '/trash';
-  fetch(url, { method: 'POST', headers: { 'X-CSRF-Token': window.CSRF } })
-    .then(function () { location.reload(); });
+  window.postForm({
+    url: url, method: 'POST', checkOk: true,
+    errText: zone === 'archive' ? 'Не удалось отправить в архив.' : 'Не удалось отправить в корзину.',
+    onSuccess: function () { location.reload(); }
+  });
   draggedId = null;
 }
 
-/* Модалка карточки */
-function openCard(id) {
+/* Модалка карточки (доступный диалог: фокус-ловушка, dirty-state, возврат фокуса). */
+var cardModal = window.initModal({
+  overlay: document.getElementById('card-modal'),
+  getBody: function () { return document.getElementById('card-modal-body'); },
+  getTitle: function () { return document.getElementById('card-modal-title'); },
+  getForm: function () { return document.getElementById('card-modal').querySelector('form'); },
+  dirtyScope: document.getElementById('card-modal')
+});
+function openCard(id, trigger) {
+  var returnFocus = trigger || document.activeElement;
   fetch('/board/task/' + encodeURIComponent(id) + '/card')
     .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
     .then(function (html) {
-      document.getElementById('card-modal-body').innerHTML = html;
-      document.getElementById('card-modal').style.display = 'flex';
-      var inp = document.getElementById('card-modal-title');
-      if (inp) inp.textContent = '';
-    })
+          document.getElementById('card-modal-body').innerHTML = html;
+          document.getElementById('card-modal-title').textContent = 'Карточка';
+          window.cardModal && cardModal.setDirty(false);
+          cardModal.open(returnFocus);
+        })
     .catch(function () { alert('Не удалось открыть карточку'); });
 }
-function closeCard() {
-  document.getElementById('card-modal').style.display = 'none';
-  document.getElementById('card-modal-body').innerHTML = '';
+function openCardKey(event, id, trigger) {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  openCard(id, trigger);
 }
+function closeCard() { if (cardModal) cardModal.close(); }
+document.getElementById('card-modal-close').addEventListener('click', function (e) { e.stopPropagation(); if (cardModal) cardModal.close(); });
 
 /* Живой поиск исполнителя в модалке карточки (глобальная функция: инлайн-скрипт
    из фрагмента модалки НЕ выполняется браузером через innerHTML, поэтому он здесь). */

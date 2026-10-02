@@ -3,14 +3,15 @@
 {% endif %}
 <form method="post" action="{{ url_for('board_task_edit', tid=t.id) }}">
   <input type="hidden" name="shortcut">
-  <label>Название *</label>
-  <input type="text" name="title" value="{{ t.title }}" required>
+  <label for="tm-title">Название *</label>
+  <input type="text" id="tm-title" name="title" value="{{ t.title }}" required>
   <label>Исполнители</label>
   <div class="tm-search">
     <input type="text" id="tm-employee-search" placeholder="Поиск по имени..." autocomplete="off"
+           aria-label="Поиск сотрудника"
            oninput="tmFilterEmployees(this)">
   </div>
-  <div class="tm-employees" id="tm-employee-list">
+  <div class="tm-employees" id="tm-employee-list" role="group" aria-label="Список исполнителей">
     {% for e in employees %}
       <label class="tm-emp {% if e.id in selected %}tm-selected{% endif %}" data-name="{{ e.name|lower }}">
         <input type="checkbox" name="employee_id" value="{{ e.id }}" class="tm-ck"
@@ -24,24 +25,24 @@
     {% endif %}
     <div class="tm-no-match" id="tm-no-match" style="display:none">Никого не найдено</div>
   </div>
-  <label>Статус (столбец)</label>
-  <select name="column_id">
+  <label for="tm-column">Статус (столбец)</label>
+  <select id="tm-column" name="column_id">
     {% for c in columns %}
       <option value="{{ c.id }}" {{ 'selected' if c.id == t.column_id }}>{{ c.name }}</option>
     {% endfor %}
   </select>
   <div class="tm-dates">
     <div>
-      <label>Дата начала</label>
-      <input type="date" name="start_date" value="{{ t.start_date }}">
+      <label for="tm-start">Дата начала</label>
+      <input type="date" id="tm-start" name="start_date" value="{{ t.start_date }}">
     </div>
     <div>
-      <label>Срок</label>
-      <input type="date" name="due_date" value="{{ t.due_date }}">
+      <label for="tm-due">Срок</label>
+      <input type="date" id="tm-due" name="due_date" value="{{ t.due_date }}">
     </div>
   </div>
-  <label>Описание</label>
-  <textarea name="description" rows="4">{{ t.description }}</textarea>
+  <label for="tm-desc">Описание</label>
+  <textarea id="tm-desc" name="description" rows="4">{{ t.description }}</textarea>
   <div class="btn-row">
     <button class="btn primary" type="submit">Сохранить</button>
   </div>
