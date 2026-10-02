@@ -400,13 +400,15 @@ d1 = dbq("SELECT * FROM departments WHERE name='ТП Orion soft'")[0]["id"]
 c.post(f"/catalog/department/{d1}/rename", data={"name": "ТП Orion (переим)"})
 check("отдел переименован", len(dbq("SELECT * FROM departments WHERE name='ТП Orion (переим)'")) == 1)
 
-# --- логаут ---
-c.get("/logout")
+# --- логаут (изменяющая операция — только POST) ---
+c.post("/logout")
 r = c.get("/", follow_redirects=True)
 check("после логаута снова логин", "/login" in r.request.path)
 
 # === КАНБАН-ДОСКА И ГАНТ ===
 c.post("/login", data={"password": "test-pass-123"}, follow_redirects=True)
+with c.session_transaction() as sess:
+    sess["_csrf"] = CSRF_TOKEN
 
 # страница доступна (до создания столбцов — пустая доска)
 r = c.get("/board")

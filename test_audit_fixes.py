@@ -247,7 +247,7 @@ check("доска: есть dragEnd(), сбрасывающий оба id",
 # =====================================================================
 # 11) fail-closed: пустой пароль не пускает + compare_digest кириллица
 # =====================================================================
-c.get("/logout")
+c.post("/logout")
 appmod.ADMIN_PASSWORD = ""
 c.post("/login", data={"password": ""}, follow_redirects=True)
 r = c.get("/", follow_redirects=True)
@@ -255,7 +255,7 @@ check("fail-closed: пустой HR_PASSWORD не даёт войти пусто
       "Вход" in r.get_data(as_text=True) and "stats-row" not in r.get_data(as_text=True))
 # кириллический пароль
 appmod.ADMIN_PASSWORD = "пароль-123"
-c.get("/logout")
+c.post("/logout")
 r = c.post("/login", data={"password": "пароль-123"}, follow_redirects=True)
 check("логин: кириллический пароль работает (compare_digest без TypeError)",
       r.status_code == 200 and "Сотрудники" in r.get_data(as_text=True))

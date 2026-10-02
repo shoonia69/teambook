@@ -58,7 +58,9 @@
           <div class="more-menu" id="moreMenu" hidden>
             <a href="{{ url_for('catalogs') }}" {% if nav_section == 'refs' %}class="active" aria-current="page"{% endif %}>Справочники</a>
             <a href="{{ url_for('settings_page') }}" {% if nav_section == 'settings' %}class="active" aria-current="page"{% endif %}>Настройки</a>
-            <a class="danger" href="{{ url_for('logout') }}">Выйти</a>
+            <form method="post" action="{{ url_for('logout') }}" class="logout-form">
+              <button class="danger" type="submit">Выйти</button>
+            </form>
           </div>
         </div>
       {% endif %}

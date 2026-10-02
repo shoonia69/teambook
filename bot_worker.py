@@ -206,6 +206,10 @@ def delete_problem(pid):
 
 def add_task(title, column_id, desc=""):
     with _db() as c:
+        if column_id is not None and not c.execute(
+                "SELECT 1 FROM kb_columns WHERE id=? AND kind='kanban'",
+                (column_id,)).fetchone():
+            raise ValueError("Некорректная колонка канбана")
         cur = c.execute(
             "INSERT INTO kb_tasks (title, column_id, description) VALUES (?,?,?)",
             (title, column_id or None, desc))
@@ -237,6 +241,10 @@ def task_by_id(tid):
 
 def move_task(tid, column_id):
     with _db() as c:
+        if not c.execute(
+                "SELECT 1 FROM kb_columns WHERE id=? AND kind='kanban'",
+                (column_id,)).fetchone():
+            raise ValueError("Некорректная колонка канбана")
         c.execute("UPDATE kb_tasks SET column_id=? WHERE id=?", (column_id, tid))
         c.commit()
 

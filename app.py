@@ -9,6 +9,7 @@ TeamBook — блокнот руководителя.
 import os
 import sqlite3
 import secrets
+import time
 import shutil
 import tempfile
 from datetime import datetime, date, timedelta
@@ -52,6 +53,52 @@ ADMIN_PASSWORD = os.environ.get("HR_PASSWORD", "")
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("HR_SECRET_KEY", secrets.token_hex(32))
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.environ.get("HR_COOKIE_SECURE", "0") == "1",
+    MAX_CONTENT_LENGTH=int(os.environ.get("HR_MAX_UPLOAD_BYTES", 32 * 1024 * 1024)),
+)
+
+LOGIN_MAX_FAILURES = 5
+LOGIN_WINDOW_SECONDS = 15 * 60
+
+
+def _login_rate_limit(ip, success=False, register_failure=False):
+    """Атомарно проверяет/обновляет общий rate-limit всех Gunicorn workers."""
+    now = int(time.time())
+    cutoff = now - LOGIN_WINDOW_SECONDS
+    con = sqlite3.connect(DB_PATH, timeout=5)
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        con.execute("DELETE FROM login_failures WHERE failed_at < ?", (cutoff,))
+        count = con.execute(
+            "SELECT COUNT(*) FROM login_failures WHERE ip=? AND failed_at>=?",
+            (ip, cutoff),
+        ).fetchone()[0]
+        blocked = count >= LOGIN_MAX_FAILURES
+        if success:
+            if not blocked:
+                con.execute("DELETE FROM login_failures WHERE ip=?", (ip,))
+            con.commit()
+            return blocked
+        if blocked:
+            con.commit()
+            return True
+        if register_failure:
+            con.execute("INSERT INTO login_failures(ip, failed_at) VALUES (?,?)", (ip, now))
+            count += 1
+        con.commit()
+        return count >= LOGIN_MAX_FAILURES
+    except sqlite3.OperationalError:
+        # При lock/timeout не открываем обход защиты и не отдаём 500.
+        try:
+            con.rollback()
+        except Exception:
+            pass
+        return True
+    finally:
+        con.close()
 
 SEMESTERS = {"1H": "I полугодие (янв–июн)", "2H": "II полугодие (июл–дек)"}
 
@@ -187,6 +234,12 @@ CREATE TABLE IF NOT EXISTS kb_task_members (
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT
+);
+
+-- Общий межпроцессный rate-limit входа (Gunicorn workers разделяют SQLite).
+CREATE TABLE IF NOT EXISTS login_failures (
+    ip        TEXT NOT NULL,
+    failed_at INTEGER NOT NULL
 );
 
 -- Личный todo руководителя: бэклог задач + матрица Эйзенхауэра (важно×срочно).
@@ -548,11 +601,25 @@ def _validate_db_schema(con):
     try:
         tables = {r[0] for r in con.execute(
             "SELECT name FROM sqlite_master WHERE type='table'")}
+        allowed_tables = set(required) | {"sqlite_sequence"}
+        extra_tables = sorted(tables - allowed_tables)
+        if extra_tables:
+            errors.append("лишние таблицы: %s" % ", ".join(extra_tables))
         missing = sorted(set(required) - tables)
         if missing:
             errors.append("нет таблиц: %s" % ", ".join(missing))
     except Exception as e:
         errors.append("чтение таблиц: %s" % e)
+    try:
+        forbidden = con.execute(
+            "SELECT type, name FROM sqlite_master "
+            "WHERE type IN ('trigger','view') AND name NOT LIKE 'sqlite_%'"
+        ).fetchall()
+        if forbidden:
+            errors.append("запрещены triggers/views: %s" % ", ".join(
+                "%s %s" % (r[0], r[1]) for r in forbidden))
+    except Exception as e:
+        errors.append("чтение triggers/views: %s" % e)
     for tbl, spec in required.items():
         try:
             ccols, cpk = _col_signature(con, tbl)
@@ -684,6 +751,8 @@ def csrf_protect():
     проверяется только по Origin — на этапе логина токена в сессии ещё нет."""
     if request.method != "POST":
         return
+    if request.content_length and request.content_length > app.config["MAX_CONTENT_LENGTH"]:
+        abort(413)
     endpoint = request.endpoint
     if endpoint in CSRF_EXEMPT or endpoint is None:
         return
@@ -735,22 +804,31 @@ def _inject_csrf_forms(resp):
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
+        ip = request.remote_addr or "unknown"
         password = request.form.get("password", "")
         # fail-closed: без настроенного HR_PASSWORD вход невозможен
         if not ADMIN_PASSWORD:
             flash("Пароль не настроен — задайте переменную HR_PASSWORD", "error")
         elif not secrets.compare_digest(password.encode("utf-8"),
                                         ADMIN_PASSWORD.encode("utf-8")):
+            if _login_rate_limit(ip, register_failure=True):
+                return render_template("login.html"), 429
             flash("Неверный пароль", "error")
         else:
+            if _login_rate_limit(ip, success=True):
+                return render_template("login.html"), 429
+            session.clear()
             session["authed"] = True
+            session.permanent = True
             return redirect(url_for("index"))
     return render_template("login.html")
 
 
-@app.route("/logout")
+@app.route("/logout", methods=["POST"])
 def logout():
-    session.pop("authed", None)
+    if not session.get("authed"):
+        return redirect(url_for("login"))
+    session.clear()
     return redirect(url_for("login"))
 
 
@@ -1583,6 +1661,8 @@ def backup_export():
 @login_required
 def backup_import():
     """Восстановить БД из загруженного файла. Текущая БД бэкапируется рядом."""
+    if request.content_length and request.content_length > app.config["MAX_CONTENT_LENGTH"]:
+        abort(413)
     f = request.files.get("dbfile")
     if not f or not f.filename:
         flash("Не выбран файл для восстановления", "error")
@@ -1816,16 +1896,28 @@ def _build_report_rows(data):
     rows = []
     for item in data:
         row = [
-            item["name"], item["department"], item["position"],
-            item["salary"], _fmt_date(item["hire_date"]),
+            _xlsx_safe(item["name"]), _xlsx_safe(item["department"]),
+            _xlsx_safe(item["position"]), _xlsx_safe(item["salary"]),
+            _xlsx_safe(_fmt_date(item["hire_date"])),
         ]
         for code in SEMESTERS:
             rec = item["semesters"].get(code) or {}
             for field in ["goals_employee", "proposals_manager",
                           "wishes_employee", "comments", "colleagues_feedback"]:
-                row.append((rec.get(field) or "").strip())
+                row.append(_xlsx_safe((rec.get(field) or "").strip()))
         rows.append(row)
     return headers, rows
+
+
+def _xlsx_safe(value):
+    """Не даёт Excel выполнить пользовательскую строку как формулу."""
+    if not isinstance(value, str):
+        return value
+    stripped = value.lstrip()
+    if stripped.startswith(("=", "+", "-", "@")):
+        leading = value[:len(value) - len(stripped)]
+        return leading + "'" + stripped
+    return value
 
 
 def _register_pdf_font():
@@ -2076,7 +2168,7 @@ def report_employee(eid):
         for cell in ws2[1]:
             cell.font = Font(bold=True)
         for m in data[0]["meetings"]:
-            ws2.append([_fmt_date(m["date"]), m["summary"]])
+            ws2.append([_xlsx_safe(_fmt_date(m["date"])), _xlsx_safe(m["summary"])])
         ws2.column_dimensions["A"].width = 14
         ws2.column_dimensions["B"].width = 90
         tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
@@ -2346,6 +2438,16 @@ def _parse_members(form_getlist):
     return sorted(set(out))
 
 
+def _valid_kanban_column(db, raw):
+    cid = _clean_int(raw)
+    if not cid:
+        return None
+    row = db.execute(
+        "SELECT id FROM kb_columns WHERE id=? AND kind='kanban'", (cid,)
+    ).fetchone()
+    return cid if row else None
+
+
 @app.route("/board/task/add", methods=["POST"])
 @login_required
 def board_task_add():
@@ -2356,10 +2458,10 @@ def board_task_add():
     db = get_db()
     # задача создаётся в столбце из формы (если передан валидный id),
     # иначе — в первый обычный столбец канбана
-    cid = _clean_int(request.form.get("column_id"))
-    if cid and not db.execute(
-            "SELECT 1 FROM kb_columns WHERE id=? AND kind='kanban'", (cid,)).fetchone():
-        cid = None
+    raw_cid = request.form.get("column_id", "").strip()
+    cid = _valid_kanban_column(db, raw_cid)
+    if raw_cid and cid is None:
+        abort(400, "Некорректная колонка канбана")
     if not cid:
         first = db.execute(
             "SELECT id FROM kb_columns WHERE kind='kanban' "
@@ -2395,7 +2497,9 @@ def board_task_edit(tid):
         flash("Название задачи не может быть пустым", "error")
         return redirect(url_for("board"))
     col = request.form.get("column_id", "").strip()
-    column_id = int(col) if col.isdigit() else None
+    column_id = _valid_kanban_column(db, col)
+    if col and column_id is None:
+        abort(400, "Некорректная колонка канбана")
     db.execute(
         "UPDATE kb_tasks SET title=?, column_id=?, description=?, "
         "start_date=?, due_date=?, updated_at=datetime('now') WHERE id=?",
@@ -2446,7 +2550,9 @@ def board_task_move(tid):
                       (tid,)).fetchone():
         abort(404)
     col = request.form.get("column_id", "").strip()
-    column_id = int(col) if col.isdigit() else None
+    column_id = _valid_kanban_column(db, col)
+    if not column_id:
+        abort(400, "Некорректная колонка канбана")
     db.execute("UPDATE kb_tasks SET column_id=?, updated_at=datetime('now') WHERE id=?",
                (column_id, tid))
     db.commit()
@@ -2527,9 +2633,8 @@ def board_task_restore(tid):
     if not t:
         abort(404)
     # если колонка отсутствует/удалена — вернуть задачу в доступный столбец
-    column_id = t["column_id"]
-    if column_id is None or not db.execute(
-            "SELECT 1 FROM kb_columns WHERE id=?", (column_id,)).fetchone():
+    column_id = _valid_kanban_column(db, t["column_id"])
+    if column_id is None:
         first = db.execute(
             "SELECT id FROM kb_columns WHERE kind='kanban' "
             "ORDER BY sort_order, id LIMIT 1").fetchone()
