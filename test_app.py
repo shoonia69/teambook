@@ -724,15 +724,19 @@ c.post(f"/todo/{p1}/up", follow_redirects=True)  # у первого нет ве
 c.post(f"/todo/{p2}/up", follow_redirects=True)  # p2 станет выше p1
 so = {r["title"]: r["sort_order"] for r in dbq("SELECT * FROM todo_items")}
 check("todo: перестановка порядка (↑/↓)", so["Порядок-2"] < so["Порядок-1"])
-# миграция: прежний статус 'today' -> q_iu (проверка миграционного UPDATE)
+# Legacy status migration is covered on an old unconstrained schema in
+# test_schema_constraints.py; the current schema must reject 'today'.
 _conn = sqlite3.connect(os.path.join(tmp, "hr_notes.db"))
-_conn.execute("UPDATE todo_items SET status='today', assigned_date='2000-01-01' WHERE title='Порядок-1'")
-_conn.commit(); _conn.close()
-r = c.get("/todo")  # страница не падает; миграция в init_db делает today->q_iu
-rows = dbq("SELECT status FROM todo_items WHERE title='Порядок-1'")
-# статус 'today' после открытия страницы не должен появиться как q-квадрант; допуск: останется
+try:
+    _conn.execute("UPDATE todo_items SET status='today' WHERE title='Порядок-1'")
+    today_rejected = False
+except sqlite3.IntegrityError:
+    today_rejected = True
+finally:
+    _conn.close()
+r = c.get("/todo")
 check("todo: страница открывается с раскладкой матрицы",
-      r.status_code == 200 and "eisen-quad" in r.get_data(as_text=True))
+      today_rejected and r.status_code == 200 and "eisen-quad" in r.get_data(as_text=True))
 
 # --- улучшения пакета: срок, тег, поиск, шаблоны, архив по дате, счётчик, тема ---
 conn = sqlite3.connect(os.path.join(tmp, "hr_notes.db"))

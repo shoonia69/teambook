@@ -12,6 +12,7 @@ import secrets
 import time
 import shutil
 import tempfile
+import re
 from contextlib import contextmanager
 from datetime import datetime, date, timedelta
 from functools import wraps
@@ -193,7 +194,8 @@ CREATE TABLE IF NOT EXISTS year_records (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     employee_id       INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
     year              INTEGER NOT NULL,
-    semester          TEXT NOT NULL,
+    semester          TEXT NOT NULL CONSTRAINT ck_year_records_semester
+                      CHECK (semester IN ('1H', '2H')),
     goals_employee    TEXT DEFAULT '',
     proposals_manager TEXT DEFAULT '',
     wishes_employee   TEXT DEFAULT '',
@@ -251,12 +253,16 @@ CREATE TABLE IF NOT EXISTS kb_tasks (
     column_id    INTEGER REFERENCES kb_columns(id) ON DELETE SET NULL,
     title        TEXT NOT NULL DEFAULT '',
     description  TEXT DEFAULT '',
-    start_date   TEXT DEFAULT '',   -- дата начала (ISO YYYY-MM-DD)
-    due_date     TEXT DEFAULT '',   -- срок/дата окончания
+    start_date   TEXT NOT NULL DEFAULT '' CONSTRAINT ck_kb_tasks_start_date
+                 CHECK (start_date = '' OR date(start_date) = start_date),
+    due_date     TEXT NOT NULL DEFAULT '' CONSTRAINT ck_kb_tasks_due_date
+                 CHECK (due_date = '' OR date(due_date) = due_date),
     archived_at  TEXT DEFAULT '',   -- не пусто = в архиве
     deleted_at   TEXT DEFAULT '',   -- не пусто = в корзине
     created_at   TEXT DEFAULT (datetime('now')),
-    updated_at   TEXT DEFAULT (datetime('now'))
+    updated_at   TEXT DEFAULT (datetime('now')),
+    CONSTRAINT ck_kb_tasks_date_order
+    CHECK (start_date = '' OR due_date = '' OR start_date <= due_date)
 );
 
 -- Исполнители задачи (many-to-many: у задачи может быть несколько сотрудников)
@@ -289,13 +295,18 @@ CREATE TABLE IF NOT EXISTS login_failures (
 CREATE TABLE IF NOT EXISTS todo_items (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     title         TEXT NOT NULL,
-    status        TEXT NOT NULL DEFAULT 'backlog',
+    status        TEXT NOT NULL DEFAULT 'backlog' CONSTRAINT ck_todo_status
+                  CHECK (status IN ('backlog','q_iu','q_in','q_nu','q_nn','done')),
     sort_order    INTEGER NOT NULL DEFAULT 0,
     assigned_date TEXT DEFAULT '',
-    done_date     TEXT DEFAULT '',
-    due_date      TEXT DEFAULT '',
+    done_date     TEXT NOT NULL DEFAULT '' CONSTRAINT ck_todo_done_date
+                  CHECK (done_date = '' OR date(done_date) = done_date),
+    due_date      TEXT NOT NULL DEFAULT '' CONSTRAINT ck_todo_due_date
+                  CHECK (due_date = '' OR date(due_date) = due_date),
     tag           TEXT DEFAULT '',
-    created_at    TEXT DEFAULT (datetime('now'))
+    created_at    TEXT DEFAULT (datetime('now')),
+    CONSTRAINT ck_todo_done_state
+    CHECK ((status = 'done' AND done_date != '') OR (status != 'done' AND done_date = ''))
 );
 
 -- Прикладные индексы для наиболее частых списков, счётчиков и уведомлений.
@@ -335,6 +346,86 @@ def run_maintenance():
         db.commit()
     finally:
         db.close()
+
+
+REQUIRED_CHECKS = {
+    "year_records": {
+        "ck_year_records_semester": "semesterin('1h','2h'",
+    },
+    "todo_items": {
+        "ck_todo_status": "statusin('backlog','q_iu','q_in','q_nu','q_nn','done'",
+        "ck_todo_done_date": "done_date=''ordate(done_date)=done_date",
+        "ck_todo_due_date": "due_date=''ordate(due_date)=due_date",
+        "ck_todo_done_state":
+            "(status='done'anddone_date!='')or(status!='done'anddone_date=''",
+    },
+    "kb_tasks": {
+        "ck_kb_tasks_start_date": "start_date=''ordate(start_date)=start_date",
+        "ck_kb_tasks_due_date": "due_date=''ordate(due_date)=due_date",
+        "ck_kb_tasks_date_order":
+            "start_date=''ordue_date=''orstart_date<=due_date",
+    },
+}
+
+
+def _normalized_check_contracts(ddl):
+    compact = re.sub(r"\s+", "", (ddl or "").lower())
+    found = {}
+    for name, expression in re.findall(
+            r"constraint([a-z0-9_]+)check\((.*?)\)(?=,|\)|$)", compact):
+        found.setdefault(name, []).append(expression)
+    return found
+
+
+def _table_has_required_checks(db, table):
+    row = db.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)
+    ).fetchone()
+    actual = _normalized_check_contracts(row[0] if row else "")
+    return all(actual.get(name) == [expr]
+               for name, expr in REQUIRED_CHECKS[table].items())
+
+
+def _rebuild_constrained_tables(db):
+    """Пересоздаёт legacy-таблицы, чтобы CHECK применялись к существующим БД."""
+    for table in ("year_records", "todo_items", "kb_tasks"):
+        if _table_has_required_checks(db, table):
+            continue
+        if table == "year_records":
+            unique_cols = [tuple(r[2] for r in db.execute(
+                f"PRAGMA index_info('{idx[1]}')").fetchall())
+                for idx in db.execute("PRAGMA index_list('year_records')").fetchall()
+                if idx[2]]
+            if ("employee_id", "year", "semester") not in unique_cols:
+                continue
+        if table == "kb_tasks":
+            fk_ok = any(
+                r[2] == "kb_columns" and r[3] == "column_id" and r[4] == "id"
+                for r in db.execute("PRAGMA foreign_key_list('kb_tasks')").fetchall()
+            )
+            if not fk_ok:
+                continue
+        match = re.search(
+            rf"CREATE TABLE IF NOT EXISTS\s+{re.escape(table)}\s*\(.*?\n\);",
+            SCHEMA,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if not match:
+            raise RuntimeError(f"CREATE TABLE для {table} не найден в SCHEMA")
+        target_sql = match.group(0).rstrip(";")
+        temp = table + "__constrained"
+        db.execute("PRAGMA legacy_alter_table=ON")
+        try:
+            db.execute(f"DROP TABLE IF EXISTS {temp}")
+            db.execute(target_sql.replace(f"IF NOT EXISTS {table}", temp, 1))
+            cols = [r[1] for r in db.execute(f"PRAGMA table_info({table})")]
+            names = ",".join(f'"{c}"' for c in cols)
+            db.execute(f"INSERT INTO {temp} ({names}) SELECT {names} FROM {table}")
+            db.execute(f"DROP TABLE {table}")
+            db.execute(f"ALTER TABLE {temp} RENAME TO {table}")
+        finally:
+            db.execute("PRAGMA legacy_alter_table=OFF")
+        print(f"[TeamBook] Миграция {table}: установлены CHECK-ограничения")
 
 
 def _apply_migrations(db):
@@ -384,12 +475,29 @@ def _apply_migrations(db):
     if "tag" not in todo_cols:
         db.execute("ALTER TABLE todo_items ADD COLUMN tag TEXT DEFAULT ''")
 
+    # Нормализуем legacy-значения до установки CHECK-ограничений.
+    db.execute("UPDATE todo_items SET status='backlog' WHERE status NOT IN "
+               "('backlog','q_iu','q_in','q_nu','q_nn','done')")
+    db.execute("UPDATE todo_items SET done_date='' WHERE status!='done'")
+    db.execute("UPDATE todo_items SET done_date=date('now') WHERE status='done' "
+               "AND (done_date='' OR date(done_date)!=done_date)")
+    db.execute("UPDATE todo_items SET due_date='' WHERE due_date!='' "
+               "AND (date(due_date) IS NULL OR date(due_date)!=due_date)")
+
+    db.execute("UPDATE year_records SET semester='1H' WHERE semester NOT IN ('1H','2H')")
+
     # Миграция канбана: колонки архива/корзины + many-to-many исполнители.
     kb_cols = {r[1] for r in db.execute("PRAGMA table_info(kb_tasks)").fetchall()}
     if "archived_at" not in kb_cols:
         db.execute("ALTER TABLE kb_tasks ADD COLUMN archived_at TEXT DEFAULT ''")
     if "deleted_at" not in kb_cols:
         db.execute("ALTER TABLE kb_tasks ADD COLUMN deleted_at TEXT DEFAULT ''")
+    db.execute("UPDATE kb_tasks SET start_date='' WHERE start_date!='' "
+               "AND (date(start_date) IS NULL OR date(start_date)!=start_date)")
+    db.execute("UPDATE kb_tasks SET due_date='' WHERE due_date!='' "
+               "AND (date(due_date) IS NULL OR date(due_date)!=due_date)")
+    db.execute("UPDATE kb_tasks SET start_date='' WHERE start_date!='' "
+               "AND due_date!='' AND start_date>due_date")
     db.execute("""CREATE TABLE IF NOT EXISTS kb_task_members (
         task_id     INTEGER NOT NULL REFERENCES kb_tasks(id) ON DELETE CASCADE,
         employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
@@ -487,7 +595,9 @@ def _apply_migrations(db):
         except Exception:
             pass  # DROP COLUMN может быть недоступен в старых SQLite — колонка останется, код её не использует
 
-    # Индексы создаём после всех ALTER TABLE, чтобы старые backup-файлы сначала
+    _rebuild_constrained_tables(db)
+
+    # Индексы создаём после всех ALTER TABLE/rebuild, чтобы старые backup-файлы сначала
     # получили недостающие колонки, используемые partial-индексами.
     db.executescript(INDEX_SCHEMA)
 
@@ -734,6 +844,19 @@ def _validate_db_schema(con):
                               % (tbl, "; ".join(miss_fk)))
         except Exception as e:
             errors.append("%s: проверка структуры: %s" % (tbl, e))
+    for table, contracts in REQUIRED_CHECKS.items():
+        try:
+            ddl_row = con.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)
+            ).fetchone()
+            actual = _normalized_check_contracts(ddl_row[0] if ddl_row else "")
+            bad_checks = [name for name, expr in contracts.items()
+                          if actual.get(name) != [expr]]
+            if bad_checks:
+                errors.append("%s: неверные CHECK-контракты %s" %
+                              (table, ", ".join(bad_checks)))
+        except Exception as e:
+            errors.append("%s: проверка CHECK: %s" % (table, e))
     try:
         bad = con.execute("PRAGMA foreign_key_check").fetchall()
         if bad:
@@ -2871,7 +2994,7 @@ def todo_move(todo):
         "SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM todo_items WHERE status=?",
         (target,)).fetchone()["n"]
     db.execute(
-        "UPDATE todo_items SET status=?, assigned_date='', sort_order=? WHERE id=?",
+        "UPDATE todo_items SET status=?, assigned_date='', done_date='', sort_order=? WHERE id=?",
         (target, nxt, todo))
     db.commit()
     return "", 204
