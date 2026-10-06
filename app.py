@@ -284,6 +284,12 @@ CREATE TABLE IF NOT EXISTS login_failures (
     failed_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version     INTEGER PRIMARY KEY,
+    name        TEXT NOT NULL UNIQUE,
+    applied_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Личный todo руководителя: бэклог задач + матрица Эйзенхауэра (важно×срочно).
 -- status: 'backlog' (вход для новых) | квадранты 'q_iu'/'q_in'/'q_nu'/'q_nn'
 --         | 'done' (архив: выполненные за сегодня)
@@ -602,6 +608,14 @@ def _apply_migrations(db):
     # Индексы создаём после всех ALTER TABLE/rebuild, чтобы старые backup-файлы сначала
     # получили недостающие колонки, используемые partial-индексами.
     db.executescript(INDEX_SCHEMA)
+    db.execute(
+        "INSERT OR IGNORE INTO schema_migrations(version,name) VALUES(1,'baseline')"
+    )
+    ledger = [tuple(r) for r in db.execute(
+        "SELECT version,name FROM schema_migrations ORDER BY version"
+    ).fetchall()]
+    if ledger != [(1, "baseline")]:
+        raise RuntimeError("Некорректный журнал schema_migrations: %r" % (ledger,))
 
 
 def _repair_dangling_fk(db, table, fk_col):
