@@ -1612,6 +1612,8 @@ def record_save(eid):
         year = int(year)
     except ValueError:
         abort(400)
+    if semester not in ("1H", "2H"):
+        abort(400, "Некорректное полугодие")
     db.execute(
         """
         INSERT INTO year_records (employee_id, year, semester, goals_employee,
@@ -2063,6 +2065,16 @@ def _report_data(db, eid=None, year=None):
 def _fmt_date(v):
     s = (v or "")
     return s[:10] if s else ""
+
+
+def _valid_iso_date(value):
+    """Пустая дата допустима; непустая должна строго соответствовать YYYY-MM-DD."""
+    if not value:
+        return True
+    try:
+        return date.fromisoformat(value).isoformat() == value
+    except ValueError:
+        return False
 
 
 def _safe_sheet_name(s, limit=31):
@@ -2678,13 +2690,17 @@ def board_task_add():
             "SELECT id FROM kb_columns WHERE kind='kanban' "
             "ORDER BY sort_order, id LIMIT 1").fetchone()
         cid = first["id"] if first else None
+    start_date = request.form.get("start_date", "").strip()
+    due_date = request.form.get("due_date", "").strip()
+    if (not _valid_iso_date(start_date) or not _valid_iso_date(due_date)
+            or (start_date and due_date and start_date > due_date)):
+        abort(400, "Некорректный диапазон дат")
     cur = db.execute(
         "INSERT INTO kb_tasks (title, column_id, description, start_date, due_date) "
         "VALUES (?,?,?,?,?)",
         (title, cid,
          request.form.get("description", ""),
-         request.form.get("start_date", ""),
-         request.form.get("due_date", "")),
+         start_date, due_date),
     )
     tid = cur.lastrowid
     for eid in _parse_members(request.form.getlist("employee_id")):
@@ -2711,13 +2727,17 @@ def board_task_edit(tid):
     column_id = _valid_kanban_column(db, col)
     if col and column_id is None:
         abort(400, "Некорректная колонка канбана")
+    start_date = request.form.get("start_date", "").strip()
+    due_date = request.form.get("due_date", "").strip()
+    if (not _valid_iso_date(start_date) or not _valid_iso_date(due_date)
+            or (start_date and due_date and start_date > due_date)):
+        abort(400, "Некорректный диапазон дат")
     db.execute(
         "UPDATE kb_tasks SET title=?, column_id=?, description=?, "
         "start_date=?, due_date=?, updated_at=datetime('now') WHERE id=?",
         (title, column_id,
          request.form.get("description", ""),
-         request.form.get("start_date", ""),
-         request.form.get("due_date", ""), tid),
+         start_date, due_date, tid),
     )
     # заменить список исполнителей
     db.execute("DELETE FROM kb_task_members WHERE task_id=?", (tid,))
@@ -2962,6 +2982,8 @@ def todo_edit(todo):
     if row:
         title = request.form.get("title", "").strip() or row["title"]
         due = request.form.get("due_date", "").strip()
+        if not _valid_iso_date(due):
+            abort(400, "Некорректная дата срока")
         tag = request.form.get("tag", "").strip()
         db.execute(
             "UPDATE todo_items SET title=?, due_date=?, tag=? WHERE id=?",
