@@ -18,7 +18,14 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-      - run: pip install -r requirements.txt
+      - name: Install dependencies and quality tools
+        run: |
+          pip install -r requirements.txt
+          pip install ruff==0.14.1 pip-audit==2.9.0
+      - name: Lint critical Python errors
+        run: python -m ruff check --select E9,F63,F7,F82 app.py bot.py bot_worker.py restore_offline.py
+      - name: Audit dependencies
+        run: python -m pip_audit -r requirements.txt
       - name: Compile
         run: python -m py_compile app.py bot.py bot_worker.py restore_offline.py
       - name: Standalone regression suites
