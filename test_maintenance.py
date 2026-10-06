@@ -42,7 +42,7 @@ r=client.get('/board')
 check("GET /board успешен",r.status_code==200,str(r.status_code))
 check("GET /board не удаляет старую корзину",count_task("OLD_TRASH")==1)
 
-appmod.run_maintenance()
+appmod.run_maintenance(now_utc=now)
 check("maintenance удаляет старую корзину",count_task("OLD_TRASH")==0)
 check("граница 30 суток сохраняется",count_task("EDGE_TRASH")==1)
 check("свежая корзина сохраняется",count_task("NEW_TRASH")==1)

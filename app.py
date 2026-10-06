@@ -338,11 +338,11 @@ def init_db():
     db.close()
 
 
-def run_maintenance():
+def run_maintenance(now_utc=None):
     """Запускает обслуживающие операции вне HTTP GET-запросов."""
     db = _connect_db()
     try:
-        _purge_stale_trash(db)
+        _purge_stale_trash(db, now_utc=now_utc)
         db.commit()
     finally:
         db.close()
@@ -2527,10 +2527,11 @@ def _board_ctx(db, month=None, year=None):
     }
 
 
-def _purge_stale_trash(db):
+def _purge_stale_trash(db, now_utc=None):
     """Окончательно удаляет задачи из корзины старше 30 дней."""
     # SQLite datetime('now') хранит UTC; порог считаем в той же шкале времени.
-    month_ago = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
+    now_utc = now_utc or datetime.utcnow()
+    month_ago = (now_utc - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
     db.execute(
         "DELETE FROM kb_tasks WHERE deleted_at != '' AND deleted_at < ?",
         (month_ago,))
