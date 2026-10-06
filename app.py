@@ -614,8 +614,58 @@ def _apply_migrations(db):
     ledger = [tuple(r) for r in db.execute(
         "SELECT version,name FROM schema_migrations ORDER BY version"
     ).fetchall()]
-    if ledger != [(1, "baseline")]:
+    if not ledger or ledger[0] != (1, "baseline"):
         raise RuntimeError("Некорректный журнал schema_migrations: %r" % (ledger,))
+    _run_versioned_migrations(db, MIGRATIONS)
+
+
+def _migration_versioned_runner(db):
+    """Маркер перехода на последовательный migration runner; DDL не требуется."""
+
+
+MIGRATIONS = (
+    (2, "versioned-runner", _migration_versioned_runner),
+)
+
+
+def _run_versioned_migrations(db, migrations):
+    known = {version: name for version, name in db.execute(
+        "SELECT version,name FROM schema_migrations"
+    ).fetchall()}
+    expected = {1: "baseline"}
+    expected.update({version: name for version, name, _ in MIGRATIONS})
+    expected.update({version: name for version, name, _ in migrations})
+    for version, name in known.items():
+        if expected.get(version) != name:
+            raise RuntimeError("Неизвестная миграция %s/%s" % (version, name))
+    for version, name, migrate in migrations:
+        if known.get(version) == name:
+            continue
+        db.execute("SAVEPOINT versioned_migration")
+        try:
+            migrate(db)
+            db.execute(
+                "INSERT INTO schema_migrations(version,name) VALUES(?,?)",
+                (version, name),
+            )
+        except Exception:
+            try:
+                db.execute("ROLLBACK TO versioned_migration")
+                db.execute("RELEASE versioned_migration")
+            except sqlite3.OperationalError as exc:
+                raise RuntimeError(
+                    "Миграция нарушила транзакцию; executescript запрещён"
+                ) from exc
+            raise
+        try:
+            db.execute("RELEASE versioned_migration")
+        except sqlite3.OperationalError as exc:
+            db.execute("DELETE FROM schema_migrations WHERE version=?", (version,))
+            db.commit()
+            raise RuntimeError(
+                "Миграция нарушила транзакцию; executescript запрещён"
+            ) from exc
+        known[version] = name
 
 
 def _repair_dangling_fk(db, table, fk_col):

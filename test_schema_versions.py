@@ -6,7 +6,7 @@ import app
 app.init_db(); app.init_db()
 c=sqlite3.connect(app.DB_PATH); c.row_factory=sqlite3.Row
 rows=[tuple(r) for r in c.execute("SELECT version,name FROM schema_migrations ORDER BY version")]
-assert rows==[(1,'baseline')],rows
+assert rows==[(1,'baseline'),(2,'versioned-runner')],rows
 before=c.total_changes; app._apply_migrations(c); c.commit()
 rows2=[tuple(r) for r in c.execute("SELECT version,name FROM schema_migrations ORDER BY version")]
 assert rows2==rows,rows2
@@ -15,10 +15,10 @@ legacy=tempfile.mkdtemp(); app.DATA_DIR=legacy; app.DB_PATH=os.path.join(legacy,
 d=sqlite3.connect(app.DB_PATH); d.row_factory=sqlite3.Row; d.executescript(app.SCHEMA); d.execute("DROP TABLE schema_migrations"); d.execute("INSERT INTO employees(name) VALUES('Legacy')"); d.commit(); d.close()
 app.init_db(); d=sqlite3.connect(app.DB_PATH)
 assert d.execute("SELECT name FROM employees").fetchone()[0]=='Legacy'
-assert d.execute("SELECT version,name FROM schema_migrations").fetchall()==[(1,'baseline')]
+assert d.execute("SELECT version,name FROM schema_migrations ORDER BY version").fetchall()==[(1,'baseline'),(2,'versioned-runner')]
 d.close(); print('MIGRATION LEDGER OK')
 
-for rows in (((1,'attacker'),), ((2,'baseline'),), ((1,'baseline'),(2,'future'))):
+for rows in (((1,'attacker'),), ((2,'baseline'),), ((1,'baseline'),(3,'future'))):
     bad=tempfile.mkdtemp(); app.DATA_DIR=bad; app.DB_PATH=os.path.join(bad,'hr_notes.db')
     d=sqlite3.connect(app.DB_PATH); d.executescript(app.SCHEMA)
     d.execute("DELETE FROM schema_migrations")
@@ -28,5 +28,5 @@ for rows in (((1,'attacker'),), ((2,'baseline'),), ((1,'baseline'),(2,'future'))
         app.init_db()
         raise AssertionError("forged ledger accepted: %r" % (rows,))
     except RuntimeError as exc:
-        assert "schema_migrations" in str(exc)
+        assert "schema_migrations" in str(exc) or "Неизвестная миграция" in str(exc)
 print('FORGED LEDGERS REJECTED')
