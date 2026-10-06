@@ -418,7 +418,9 @@ def _rebuild_constrained_tables(db):
         try:
             db.execute(f"DROP TABLE IF EXISTS {temp}")
             db.execute(target_sql.replace(f"IF NOT EXISTS {table}", temp, 1))
-            cols = [r[1] for r in db.execute(f"PRAGMA table_info({table})")]
+            source_cols = {r[1] for r in db.execute(f"PRAGMA table_info({table})")}
+            target_cols = [r[1] for r in db.execute(f"PRAGMA table_info({temp})")]
+            cols = [c for c in target_cols if c in source_cols]
             names = ",".join(f'"{c}"' for c in cols)
             db.execute(f"INSERT INTO {temp} ({names}) SELECT {names} FROM {table}")
             db.execute(f"DROP TABLE {table}")

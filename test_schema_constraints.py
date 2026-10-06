@@ -77,6 +77,8 @@ ldb.executescript(legacy_schema)
 ldb.execute("INSERT INTO employees(name) VALUES ('Legacy')")
 le = ldb.execute("SELECT id FROM employees").fetchone()[0]
 ldb.execute("INSERT INTO year_records(employee_id,year,semester) VALUES (?,?,?)", (le, 2026, "3H"))
+ldb.execute("ALTER TABLE year_records ADD COLUMN space_owner INTEGER")
+ldb.execute("UPDATE year_records SET space_owner=42")
 ldb.execute("INSERT INTO todo_items(title,status,done_date,due_date) VALUES (?,?,?,?)", ("legacy", "today", "2026-01-01", "broken"))
 ldb.execute("INSERT INTO kb_columns(name) VALUES ('Legacy')")
 lc = ldb.execute("SELECT id FROM kb_columns").fetchone()[0]
