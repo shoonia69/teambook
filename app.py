@@ -1413,6 +1413,8 @@ def _save_employee(eid):
     did = _clean_int(request.form.get("department_id"))
     salary = request.form.get("salary", "").strip()
     hire_date = request.form.get("hire_date", "").strip()
+    if not _valid_iso_date(hire_date):
+        abort(400, "Некорректная дата приёма")
 
     if eid is None:
         cur = db.execute(
@@ -1557,6 +1559,8 @@ def history_add(eid):
     if not change_date:
         flash("Дата изменения обязательна", "error")
         return redirect(url_for("employee_view", eid=eid))
+    if not _valid_iso_date(change_date):
+        abort(400, "Некорректная дата изменения")
     db.execute(
         "INSERT INTO employee_history (employee_id, change_date, position_id, salary, note) "
         "VALUES (?,?,?,?,?)",
@@ -1576,6 +1580,8 @@ def history_edit(hid):
     if not rec:
         abort(404)
     change_date = request.form.get("change_date", rec["change_date"]).strip()
+    if not _valid_iso_date(change_date):
+        abort(400, "Некорректная дата изменения")
     db.execute(
         "UPDATE employee_history SET change_date=?, position_id=?, salary=?, note=? WHERE id=?",
         (change_date, _clean_int(request.form.get("position_id")),
@@ -1706,6 +1712,8 @@ def meeting_new(eid):
     db = get_db()
     if request.method == "POST":
         date = request.form.get("date", "") or datetime.now().strftime("%Y-%m-%d")
+        if not _valid_iso_date(date):
+            abort(400, "Некорректная дата встречи")
         db.execute(
             "INSERT INTO meetings (employee_id, date, summary) VALUES (?,?,?)",
             (eid, date, request.form.get("summary", "")),
@@ -1725,6 +1733,8 @@ def meeting_edit(mid):
         abort(404)
     if request.method == "POST":
         date = request.form.get("date", mt["date"])
+        if not _valid_iso_date(date):
+            abort(400, "Некорректная дата встречи")
         db.execute(
             "UPDATE meetings SET date=?, summary=? WHERE id=?",
             (date, request.form.get("summary", ""), mid),
