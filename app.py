@@ -2152,7 +2152,7 @@ def _valid_iso_date(value):
 
 
 def _safe_sheet_name(s, limit=31):
-    """Excel-запрещённые символы []:*?/\ и апострофы + лимит длины листа."""
+    r"""Excel-запрещённые символы []:*?/\ и апострофы + лимит длины листа."""
     import re
     s = re.sub(r"[\[\]:*/?\\]", "", str(s or "")).replace("'", "")
     return (s[:limit].strip() or "Отчёт")

@@ -1,0 +1,37 @@
+name: TeamBook CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Compile
+        run: python -m py_compile app.py bot.py bot_worker.py restore_offline.py
+      - name: Standalone regression suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          for test in \
+            test_app.py test_migration.py test_repair.py test_audit_fixes.py \
+            test_security_pack1.py test_lifecycle_pack.py test_restore.py \
+            test_indexes.py test_bot_fixes.py test_ux_pack2.py \
+            test_maintenance.py test_schema_constraints.py \
+            test_http_validation.py test_domain_dates.py \
+            test_schema_versions.py test_migration_runner.py
+          do
+            python "$test"
+          done
