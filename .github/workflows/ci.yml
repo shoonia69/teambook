@@ -22,7 +22,7 @@ jobs:
       - name: Install dependencies and quality tools
         run: |
           pip install --require-hashes -r requirements.lock
-          pip install ruff==0.14.1 pip-audit==2.9.0
+          pip install pytest==9.1.1 ruff==0.14.1 pip-audit==2.9.0
       - name: Verify dependency lock
         run: |
           pip install uv==0.12.18
@@ -34,6 +34,8 @@ jobs:
         run: python -m pip_audit -r requirements.lock
       - name: Compile
         run: python -m py_compile app.py bot.py bot_worker.py restore_offline.py
+      - name: Pytest migration suite
+        run: python -m pytest -q
       - name: Standalone regression suites
         shell: bash
         run: |
