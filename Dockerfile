@@ -7,8 +7,8 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 # Зависимости ставятся отдельным слоем для кеширования
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt \
+COPY requirements.lock ./
+RUN pip install --no-cache-dir --require-hashes -r requirements.lock \
     && apt-get update \
     && apt-get install -y --no-install-recommends fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*

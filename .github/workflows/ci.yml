@@ -18,14 +18,20 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
+          cache-dependency-path: requirements.lock
       - name: Install dependencies and quality tools
         run: |
-          pip install -r requirements.txt
+          pip install --require-hashes -r requirements.lock
           pip install ruff==0.14.1 pip-audit==2.9.0
+      - name: Verify dependency lock
+        run: |
+          pip install uv==0.12.18
+          uv pip compile requirements.txt --python-version 3.12 --python-platform linux --no-annotate --no-header --generate-hashes -o requirements.generated.lock
+          diff -u requirements.lock requirements.generated.lock
       - name: Lint critical Python errors
         run: python -m ruff check --select E9,F63,F7,F82 app.py bot.py bot_worker.py restore_offline.py
       - name: Audit dependencies
-        run: python -m pip_audit -r requirements.txt
+        run: python -m pip_audit -r requirements.lock
       - name: Compile
         run: python -m py_compile app.py bot.py bot_worker.py restore_offline.py
       - name: Standalone regression suites

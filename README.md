@@ -169,7 +169,7 @@ docker run -d --name teambook \
 ```bash
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+pip install --require-hashes -r requirements.lock
 
 export HR_PASSWORD=test
 export HR_SECRET_KEY=dev-secret
@@ -184,6 +184,19 @@ python test_migration.py  # тест миграции старой схемы
 python test_repair.py     # тест починки FK-ссылок
 ```
 
+После изменения `requirements.txt` пересоздайте lock-файл закреплённым
+`uv 0.12.18`:
+
+```bash
+uv pip compile requirements.txt \
+  --python-version 3.12 \
+  --python-platform linux \
+  --no-annotate --no-header --generate-hashes \
+  -o requirements.lock
+```
+
+CI повторяет эту команду и отклоняет рассинхронизацию исходного файла и lock-файла.
+
 ---
 
 ## Структура проекта
@@ -194,7 +207,8 @@ python test_repair.py     # тест починки FK-ссылок
 ├── wsgi.py                # точка входа для gunicorn
 ├── bot.py                 # супервизор Telegram-бота (держит воркер живым)
 ├── bot_worker.py          # воркер Telegram-бота (python-telegram-bot)
-├── requirements.txt
+├── requirements.txt       # прямые зависимости и допустимые диапазоны
+├── requirements.lock      # зафиксированные runtime-зависимости
 ├── Dockerfile
 ├── entrypoint.sh          # входной скрипт контейнера (бот + gunicorn)
 ├── docker-compose.yml
