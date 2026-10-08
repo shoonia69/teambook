@@ -4,7 +4,11 @@ import sqlite3
 import pytest
 
 
-EXPECTED_LEDGER = [(1, "baseline"), (2, "versioned-runner")]
+EXPECTED_LEDGER = [
+    (1, "baseline"),
+    (2, "versioned-runner"),
+    (3, "drop-legacy-space-owner"),
+]
 
 
 def read_ledger(path):

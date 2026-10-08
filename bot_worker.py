@@ -11,7 +11,6 @@ from datetime import datetime
 
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup,
-    ReplyKeyboardMarkup, ReplyKeyboardRemove,
 )
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,

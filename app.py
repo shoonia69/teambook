@@ -14,7 +14,7 @@ import shutil
 import tempfile
 import re
 from contextlib import contextmanager
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from functools import wraps
 
 from flask import (
@@ -26,7 +26,6 @@ try:
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment
     from openpyxl.utils import get_column_letter
-    from openpyxl.comments import Comment
     HAS_EXCEL = True
 except Exception:
     HAS_EXCEL = False
@@ -39,7 +38,6 @@ try:
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
-    from reportlab.lib.enums import TA_CENTER
     HAS_PDF = True
 except Exception:
     HAS_PDF = False
@@ -52,6 +50,9 @@ DATA_DIR = os.environ.get("HR_DATA_DIR", os.path.join(BASE_DIR, "data"))
 DB_PATH = os.path.join(DATA_DIR, "hr_notes.db")
 MAINTENANCE_LOCK = os.path.join(DATA_DIR, ".maintenance.lock")
 RESTORE_REQUEST = os.path.join(DATA_DIR, ".restore-request.json")
+COMMIT_SHA = os.environ.get("COMMIT_SHA", "unknown").strip()
+OPERATIONAL_RETENTION_DAYS = int(os.environ.get("HR_OPERATIONAL_RETENTION_DAYS", "30"))
+MIN_FREE_BYTES = 64 * 1024 * 1024
 
 ADMIN_PASSWORD = os.environ.get("HR_PASSWORD", "")
 
@@ -346,12 +347,37 @@ def init_db():
 
 def run_maintenance(now_utc=None):
     """Запускает обслуживающие операции вне HTTP GET-запросов."""
+    required_free = int(os.environ.get("HR_MIN_FREE_BYTES", str(MIN_FREE_BYTES)))
+    free = shutil.disk_usage(DATA_DIR)[2]
+    if free < required_free:
+        raise RuntimeError(
+            "insufficient free disk space: %d bytes available, %d required"
+            % (free, required_free)
+        )
     db = _connect_db()
     try:
         _purge_stale_trash(db, now_utc=now_utc)
         db.commit()
+        db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     finally:
         db.close()
+    _purge_operational_artifacts(now_utc=now_utc)
+
+
+def _purge_operational_artifacts(now_utc=None):
+    """Удаляет только известные backup/quarantine artifacts старше retention."""
+    now = now_utc or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    cutoff = now.timestamp() - OPERATIONAL_RETENTION_DAYS * 86400
+    prefixes = ("hr_notes.db.pre_restore_", ".restore-rejected-")
+    for entry in os.scandir(DATA_DIR):
+        if not entry.is_file(follow_symlinks=False):
+            continue
+        if not entry.name.startswith(prefixes):
+            continue
+        if entry.stat(follow_symlinks=False).st_mtime < cutoff:
+            os.remove(entry.path)
 
 
 REQUIRED_CHECKS = {
@@ -623,8 +649,17 @@ def _migration_versioned_runner(db):
     """Маркер перехода на последовательный migration runner; DDL не требуется."""
 
 
+def _migration_drop_legacy_space_owner(db):
+    """Удаляет подтверждённые остаточные колонки отменённой spaces-функции."""
+    for table in ("employee_history", "meetings", "problems"):
+        columns = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
+        if "space_owner" in columns:
+            db.execute(f"ALTER TABLE {table} DROP COLUMN space_owner")
+
+
 MIGRATIONS = (
     (2, "versioned-runner", _migration_versioned_runner),
+    (3, "drop-legacy-space-owner", _migration_drop_legacy_space_owner),
 )
 
 
@@ -765,9 +800,9 @@ def _fk_groups(con, t):
                            "match": r[7], "cols": []}
         groups[gid]["cols"].append((r[3], r[4]))
     out = set()
-    for g in groups.values():
-        out.add((g["ptable"], g["on_delete"], g["on_update"], g["match"],
-                 tuple(g["cols"])))
+    for group in groups.values():
+        out.add((group["ptable"], group["on_delete"], group["on_update"], group["match"],
+                 tuple(group["cols"])))
     return out
 
 
@@ -978,7 +1013,7 @@ def _migrate_employees(db):
 # --------------------------------------------------------------------------- #
 @app.before_request
 def ensure_auth():
-    if request.endpoint in ("login", "static") or request.endpoint is None:
+    if request.endpoint in ("login", "static", "healthz") or request.endpoint is None:
         return
     if not session.get("authed"):
         return redirect(url_for("login"))
@@ -1886,6 +1921,12 @@ def problem_delete(pid):
 # --------------------------------------------------------------------------- #
 # Резервное копирование / восстановление БД
 # --------------------------------------------------------------------------- #
+@app.route("/healthz")
+def healthz():
+    """Unauthenticated liveness response with non-secret build identity."""
+    return {"status": "ok", "commit": COMMIT_SHA or "unknown"}
+
+
 @app.route("/backup")
 @login_required
 def backup_page():
@@ -2234,7 +2275,6 @@ def _register_pdf_font():
                                  os.path.join(win, "DejaVuSans.ttf")]
     candidates["DejaVuSans-Bold"] += [os.path.join(win, "arialbd.ttf"),
                                       os.path.join(win, "DejaVuSans-Bold.ttf")]
-    import re
     for name, paths in candidates.items():
         for p in paths:
             if os.path.exists(p):
@@ -3186,7 +3226,7 @@ if __name__ == "__main__":
     if not ADMIN_PASSWORD:
         ADMIN_PASSWORD = secrets.token_urlsafe(12)
         print("=" * 60)
-        print(f"[TeamBook] Пароль не задан (HR_PASSWORD).")
+        print("[TeamBook] Пароль не задан (HR_PASSWORD).")
         print(f"[TeamBook] Сгенерирован временный: {ADMIN_PASSWORD}")
         print("=" * 60)
     port = int(os.environ.get("PORT", 5000))

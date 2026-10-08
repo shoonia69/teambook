@@ -3,7 +3,11 @@ import sqlite3
 import pytest
 
 
-EXPECTED_LEDGER = [(1, "baseline"), (2, "versioned-runner")]
+EXPECTED_LEDGER = [
+    (1, "baseline"),
+    (2, "versioned-runner"),
+    (3, "drop-legacy-space-owner"),
+]
 
 
 def ledger(db):
@@ -42,17 +46,17 @@ def test_migration_callback_runs_exactly_once(app_env):
 
     db = app_env._connect_db()
     try:
-        app_env._run_versioned_migrations(db, ((3, "probe", migration),))
+        app_env._run_versioned_migrations(db, ((4, "probe", migration),))
         db.commit()
     finally:
         db.close()
 
     db = app_env._connect_db()
     try:
-        app_env._run_versioned_migrations(db, ((3, "probe", migration),))
+        app_env._run_versioned_migrations(db, ((4, "probe", migration),))
         db.commit()
         assert calls == [1]
-        assert ledger(db)[-1] == (3, "probe")
+        assert ledger(db)[-1] == (4, "probe")
         assert object_exists(db, "table", "runner_probe")
     finally:
         db.close()
@@ -66,11 +70,11 @@ def test_failing_migration_rolls_back_body_and_ledger(app_env):
     db = app_env._connect_db()
     try:
         with pytest.raises(RuntimeError, match="boom"):
-            app_env._run_versioned_migrations(db, ((3, "broken", broken),))
+            app_env._run_versioned_migrations(db, ((4, "broken", broken),))
 
         assert not object_exists(db, "table", "broken_probe")
         assert db.execute(
-            "SELECT 1 FROM schema_migrations WHERE version=3"
+            "SELECT 1 FROM schema_migrations WHERE version=4"
         ).fetchone() is None
     finally:
         db.rollback()
@@ -95,10 +99,10 @@ def test_executescript_then_failure_is_rejected_without_ledger_stamp(app_env):
     db = app_env._connect_db()
     try:
         with pytest.raises(RuntimeError, match="executescript"):
-            app_env._run_versioned_migrations(db, ((3, "scripted", scripted),))
+            app_env._run_versioned_migrations(db, ((4, "scripted", scripted),))
 
         assert db.execute(
-            "SELECT 1 FROM schema_migrations WHERE version=3"
+            "SELECT 1 FROM schema_migrations WHERE version=4"
         ).fetchone() is None
         assert object_exists(db, "table", "scripted_probe")
     finally:
@@ -124,11 +128,11 @@ def test_successful_executescript_is_rejected_without_ledger_stamp(app_env):
         with pytest.raises(RuntimeError, match="executescript"):
             app_env._run_versioned_migrations(
                 db,
-                ((3, "scripted-ok", scripted_ok),),
+                ((4, "scripted-ok", scripted_ok),),
             )
 
         assert db.execute(
-            "SELECT 1 FROM schema_migrations WHERE version=3"
+            "SELECT 1 FROM schema_migrations WHERE version=4"
         ).fetchone() is None
         assert object_exists(db, "table", "scripted_ok_probe")
     finally:

@@ -28,25 +28,11 @@ jobs:
           pip install uv==0.12.18
           uv pip compile requirements.txt --python-version 3.12 --python-platform linux --no-annotate --no-header --generate-hashes -o requirements.generated.lock
           diff -u requirements.lock requirements.generated.lock
-      - name: Lint critical Python errors
-        run: python -m ruff check --select E9,F63,F7,F82 app.py bot.py bot_worker.py restore_offline.py
+      - name: Lint Python correctness
+        run: python -m ruff check --select E9,F app.py bot.py bot_worker.py restore_offline.py wsgi.py
       - name: Audit dependencies
         run: python -m pip_audit -r requirements.lock
       - name: Compile
-        run: python -m py_compile app.py bot.py bot_worker.py restore_offline.py
+        run: python -m py_compile app.py bot.py bot_worker.py restore_offline.py wsgi.py
       - name: Pytest migration suite
         run: python -m pytest -q
-      - name: Standalone regression suites
-        shell: bash
-        run: |
-          set -euo pipefail
-          for test in \
-            test_app.py test_migration.py test_repair.py test_audit_fixes.py \
-            test_security_pack1.py test_lifecycle_pack.py test_restore.py \
-            test_indexes.py test_bot_fixes.py test_ux_pack2.py \
-            test_maintenance.py test_schema_constraints.py \
-            test_http_validation.py test_domain_dates.py \
-            test_schema_versions.py test_migration_runner.py
-          do
-            python "$test"
-          done
