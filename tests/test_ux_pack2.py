@@ -131,7 +131,7 @@ def test_shared_form_and_filter_css(base_css, css_class):
 
 @pytest.mark.parametrize(
     "marker",
-    ['class="compact-filter"', 'name="department"', 'name="position"'],
+    ['class="filter-bar"', 'name="department"', 'name="position"'],
 )
 def test_index_uses_compact_combined_filters(ux_pages, marker):
     assert marker in ux_pages["index"]

@@ -2,10 +2,13 @@
 {% block title %}Сотрудники · TeamBook{% endblock %}
 {% block content %}
 
-<div class="page-head">
-  <h2>Сотрудники{% if sel_department or sel_position or sel_q %}<span class="sub" style="font-size:13px"> (отфильтровано)</span>{% endif %}</h2>
-  <div class="spacer"></div>
-  <a class="btn primary" href="{{ url_for('employee_new') }}">+ Добавить сотрудника</a>
+<div class="page-header">
+  <div class="page-header-main">
+    <h1 class="page-title">Сотрудники{% if sel_department or sel_position or sel_q %}<span class="meta-text"> (отфильтровано)</span>{% endif %}</h1>
+  </div>
+  <div class="page-actions">
+    <a class="btn primary" href="{{ url_for('employee_new') }}">+ Добавить сотрудника</a>
+  </div>
 </div>
 
 {% if stats %}
@@ -38,7 +41,7 @@
 {% endif %}
 
 <!-- Поиск/отдел/должность — одна компактная строка над таблицей -->
-<form class="compact-filter" method="get" action="{{ url_for('index') }}">
+<form class="filter-bar" method="get" action="{{ url_for('index') }}">
   <input class="grow" type="text" id="q" name="q" value="{{ sel_q or '' }}"
          placeholder="Поиск: имя или фамилия..." style="max-width:300px">
   <select id="dept-filter" name="department">
