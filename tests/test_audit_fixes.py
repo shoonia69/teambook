@@ -79,8 +79,8 @@ def test_board_card_displays_dates_as_day_month(app_env, client):
 
     html = client.get("/board").get_data(as_text=True)
 
-    assert "📅 07-05–23-11" in html
-    assert "📅 05-07–11-23" not in html
+    assert "Срок: 07-05–23-11" in html
+    assert "Срок: 05-07–11-23" not in html
 
 
 def test_archive_links_to_next_day(client):

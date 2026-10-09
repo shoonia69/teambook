@@ -57,3 +57,14 @@ def test_foundation_components_and_shared_ui_script_are_available(client):
         ".empty-state",
     ):
         assert selector in css
+
+
+def test_modal_manager_tracks_supplied_scope_and_resets_on_form_submission(client):
+    html = client.get("/").get_data(as_text=True)
+
+    assert "var dirtyScope = opts.dirtyScope || overlay" in html
+    assert "dirtyScope.addEventListener('input'" in html
+    assert "dirtyScope.addEventListener('change'" in html
+    assert "dirtyScope.addEventListener('submit'" in html
+    assert "var form = opts.getForm ? opts.getForm() : e.target" in html
+    assert "form.addEventListener('formdata', function () { dirty = false; }" in html

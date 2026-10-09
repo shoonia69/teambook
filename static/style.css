@@ -416,6 +416,28 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
 }
 
 /* ===================== Канбан и гант ===================== */
+.visually-hidden {
+  position: absolute !important; width: 1px !important; height: 1px !important;
+  padding: 0 !important; margin: -1px !important; overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important;
+}
+.board-view-switch {
+  display: inline-flex; padding: 3px; gap: 2px;
+  border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--panel2);
+}
+.board-view-button {
+  border: 0; border-radius: var(--radius-sm); padding: 7px 12px;
+  background: transparent; color: var(--muted); cursor: pointer; font: inherit;
+}
+.board-view-button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); font-weight: 600; }
+.board-page[data-board-view="kanban"] .gantt-panel { display: none; }
+.board-page[data-board-view="calendar"] .kanban-panel { display: none; }
+.board-section-head { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
+.board-section-head .section-title { flex: 1; }
+.kb-add-column-form { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-3); }
+.kb-add-column-form[hidden] { display: none; }
+.kb-add-column-form input { max-width: 280px; }
+.kb-rename-form input { min-width: 0; padding: 6px 8px; }
 .board-wrap {
   display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap;
 }
@@ -437,17 +459,31 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
 }
 .kb-col-name { flex: 1; font-size: 14px; }
 .kb-count { color: var(--muted); font-size: 12px; background: var(--panel2); border-radius: 10px; padding: 0 8px; }
-.kb-col-actions { display: flex; gap: 6px; align-items: center; }
-.kb-col-actions input[type="text"] { width: 110px !important; padding: 4px 6px; font-size: 12px; }
+.kb-column-menu-trigger { min-width: 32px; width: 32px; height: 30px; padding: 0; border: 0; }
+.kb-column-menu-panel { min-width: 180px; }
+.action-menu-item {
+  display: block; width: 100%; padding: 9px 10px; border: 0; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text); text-align: left; cursor: pointer; font: inherit;
+}
+.action-menu-item:hover { background: var(--panel); }
+.action-menu-item.danger { color: var(--danger); }
+.kb-column-menu-panel form { margin: 0; }
+.kb-menu-rename-form { display: grid; grid-template-columns: 1fr; gap: var(--space-1); padding-bottom: var(--space-1); }
+.kb-menu-rename-form input { min-width: 170px; padding: 7px 8px; }
+.kb-column-menu > summary { list-style: none; }
+.kb-column-menu > summary::-webkit-details-marker { display: none; }
+.kb-column-menu[open] > .action-menu-panel { display: block; }
 .btn-xs { padding: 2px 7px; font-size: 12px; line-height: 1.4; }
 
 .kb-col-cards { display: flex; flex-direction: column; gap: 8px; flex: 1; }
-.kb-empty { color: var(--muted); font-size: 12px; text-align: center; opacity: .5; }
+.kb-empty { color: var(--muted); font-size: 12px; text-align: center; }
 .kb-card {
   background: var(--panel2); border: 1px solid var(--border);
   border-left: 3px solid var(--accent); border-radius: 8px;
-  padding: 8px 10px; cursor: grab; width: 100%;
+  padding: 10px 12px; cursor: grab; width: 100%;
+  transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
+.kb-card:hover, .kb-card:focus-visible { transform: translateY(-1px); border-color: var(--accent); box-shadow: var(--shadow-sm); }
 /* привидение drag&drop — компактная непрозрачная копия карточки */
 .kb-drag-ghost {
   width: 220px !important;
@@ -458,20 +494,25 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
 .kb-drag-ghost .kb-card-edit { display: none; }
 .kb-card:active { cursor: grabbing; }
 .kb-card-title { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
-.kb-card-desc { color: var(--muted); font-size: 12px; white-space: pre-wrap; margin-bottom: 6px; }
+.kb-card-desc {
+  color: var(--muted); font-size: 12px; white-space: pre-wrap; margin-bottom: 6px;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden;
+}
 .kb-card-meta { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 12px; flex-wrap: wrap; }
 .kb-card-meta .spacer { flex: 1; }
 
 /* фильтры и поиск на доске */
 .kb-filter-bar {
-  display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
-  padding: 8px 10px; margin-bottom: 10px;
-  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+  max-width: none; margin-bottom: var(--space-3);
 }
 .kb-filter-bar input[type="text"] { flex: 1; min-width: 180px; }
 .kb-filter-bar select { max-width: 200px; }
-.kb-chk { display: inline-flex; gap: 5px; align-items: center; font-size: 13px; color: var(--muted); cursor: pointer; white-space: nowrap; }
-.kb-chk input { width: auto; }
+.filter-toggle {
+  padding: 6px 10px; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--panel2); color: var(--muted); cursor: pointer;
+}
+.filter-toggle:has(input:checked) { border-color: var(--accent); color: var(--text); }
+.filter-toggle input { width: auto; }
 
 /* просроченная задача — красная рамка и бейдж */
 .kb-card.ov { border-color: color-mix(in srgb, var(--danger) 60%, transparent); background: color-mix(in srgb, var(--danger) 8%, var(--panel2)); }
@@ -497,7 +538,7 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
 .kb-add-col input, .kb-add-task input { flex: 1; min-width: 120px; }
 .kb-add-task { display: flex; gap: 6px; margin-top: auto; }
 .kb-add-task input { padding: 6px 8px; }
-.kb-grip { cursor: grab; display: inline-block; margin-right: 6px; color: var(--muted); user-select: none; }
+.kb-grip { cursor: grab; display: inline-block; margin-right: 6px; padding: 2px 4px; color: var(--muted); background: transparent; border: 0; user-select: none; }
 .kb-grip:active { cursor: grabbing; }
 
 .kb-card-edit { position: relative; }
@@ -514,6 +555,8 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
 
 /* Гант — календарная сетка месяца */
 .gantt-head { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+.calendar-legend { margin-top: var(--space-2); color: var(--muted); font-size: 13px; }
+.calendar-legend span { color: var(--danger); }
 .gantt-cal {
   border: 1px solid var(--border); border-radius: var(--radius);
   background: var(--panel); padding: 6px; overflow-x: auto;
@@ -628,6 +671,8 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
   .notif-drop { width: min(92vw, 360px); right: -20px; }
   .more-menu { right: -4px; }
   .kanban-panel, .gantt-panel { min-width: 0; flex-basis: 100%; }
+  .board-page[data-board-view="both"] .gantt-panel { display: none; }
+  .board-page[data-board-view="both"] .kanban-panel { display: block; }
   .kb-col { min-width: 240px; }
   .gantt-cal { overflow-x: auto; }
   .gcal-cell { min-width: 90px; }
@@ -636,8 +681,10 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
 }
 @media (max-width: 560px) {
   .brand-name { display: none; }
-  .kb-filter-bar select { max-width: 100%; }
-  .kb-chk { font-size: 12px; }
+  .page-actions, .board-view-switch { width: 100%; }
+  .board-view-button { flex: 1; }
+  .kb-filter-bar select, .kb-filter-bar input[type="text"] { max-width: 100%; flex: 1 1 100%; }
+  .filter-toggle { min-height: 44px; }
   .container { padding: 0 10px; }
 }
 /* ---- Пакет 2: узкие экраны 320–390px — без переполнения ---- */

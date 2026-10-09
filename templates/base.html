@@ -46,6 +46,7 @@ window.postForm = function (opts) {
 window.initModal = function (opts) {
   var overlay = opts.overlay;
   var card = overlay.querySelector('.modal-card');
+  var dirtyScope = opts.dirtyScope || overlay;
   var lastTrigger = null;
   var dirty = false;
   var inerted = [];
@@ -78,8 +79,13 @@ window.initModal = function (opts) {
     return true;
   }
   overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
-  overlay.addEventListener('input', function () { dirty = true; });
-  overlay.addEventListener('change', function () { dirty = true; });
+  dirtyScope.addEventListener('input', function () { dirty = true; });
+  dirtyScope.addEventListener('change', function () { dirty = true; });
+  dirtyScope.addEventListener('submit', function (e) {
+    var form = opts.getForm ? opts.getForm() : e.target;
+    if (!form || e.target !== form) return;
+    form.addEventListener('formdata', function () { dirty = false; }, { once: true });
+  });
   overlay.addEventListener('keydown', trap);
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && overlay.style.display === 'flex') close();

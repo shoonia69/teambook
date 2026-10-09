@@ -2,288 +2,278 @@
 {% block title %}Доска задач · TeamBook{% endblock %}
 {% block content %}
 
-<div class="page-head">
-  <h2>Доска задач и сроки</h2>
-  <div class="spacer"></div>
-</div>
-
-<div class="board-wrap">
-
-  <!-- ===================== КАНБАН ===================== -->
-  <section class="kanban-panel">
-    <div class="panel-title">Канбан</div>
-    <div class="kb-add-row" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-      <form method="post" action="{{ url_for('board_column_add') }}" style="display:flex;gap:8px">
-        <input type="text" name="name" placeholder="Новый столбец..." required>
-        <button class="btn small" type="submit">+ Столбец</button>
-      </form>
+<div class="board-page" id="boardPage" data-board-view="kanban">
+  <div class="page-header">
+    <div class="page-header-main">
+      <h1 class="page-title">Доска задач и сроки</h1>
     </div>
-
-    <div class="kb-filter-bar">
-      <input type="text" id="kbSearch" placeholder="🔍 Поиск по задачам..." oninput="kbApplyFilters()">
-      <select id="kbEmpFilter" onchange="kbApplyFilters()">
-        <option value="">Все исполнители</option>
-        {% for e in employees %}<option value="{{ e.name }}">{{ e.name }}</option>{% endfor %}
-      </select>
-      <label class="kb-chk"><input type="checkbox" id="kbOverdueOnly" onchange="kbApplyFilters()"> только просроченные</label>
-      <label class="kb-chk"><input type="checkbox" id="kbNoEmpOnly" onchange="kbApplyFilters()"> без исполнителя</label>
-    </div>
-
-    {% if cols_view %}
-    <div class="kb-row" id="kbRow">
-      <!-- столбцы (создаваемые руководителем; Бэклог — системный) -->
-      {% for col in cols_view %}
-        {% set tasks = col_tasks.get(col.id, []) %}
-        <div class="kb-col" data-colid="{{ col.id }}"
-             ondragover="event.preventDefault(); this.classList.add('drag-over')"
-             ondragleave="this.classList.remove('drag-over')"
-             ondrop="dropOn(event, {{ col.id }})">
-          <div class="kb-col-head">
-            <span class="kb-grip" draggable="true" ondragstart="dragCol(event)" ondragend="dragEnd(event)"
-                  title="Перетащите на другой столбец, чтобы изменить порядок" aria-label="Перетащить столбец">⠿</span>
-            <span class="kb-col-name">{{ col.name }}</span>
-            <span class="kb-count">{{ tasks|length }}</span>
-            {% if not col.locked %}
-            <span class="kb-col-actions">
-              <form method="post" action="{{ url_for('board_column_rename', cid=col.id) }}" style="display:inline;margin:0">
-                <input type="text" name="name" value="{{ col.name }}" placeholder="Переименовать"
-                       title="Переименовать столбец" style="width:110px">
-              </form>
-              <form method="post" action="{{ url_for('board_column_delete', cid=col.id) }}" style="display:inline;margin:0"
-                    onsubmit="return confirm('Удалить столбец? Задачи из него останутся без столбца.')">
-                <button class="btn btn-xs danger" type="submit" title="Удалить столбец">✕</button>
-              </form>
-            </span>
-            {% endif %}
-          </div>
-
-          <div class="kb-col-cards">
-            {% for t in tasks %}
-            {% set who = members.get(t.id, []) %}
-            {% set is_overdue = t.due_date and t.due_date < today_iso %}
-            {% set is_noemp = who|length == 0 %}
-            <div class="kb-card {% if is_overdue %}ov{% endif %}"  draggable="true" role="button" tabindex="0"
-                 ondragstart="dragTask(event)" ondragend="dragEnd(event)"
-                 onclick="openCard({{ t.id }}, this)"
-                 onkeydown="openCardKey(event, {{ t.id }}, this)"
-                 data-id="{{ t.id }}"
-                 data-title="{{ (t.title ~ ((' ' ~ t.description) if t.description else ''))|lower }}"
-                 data-emp="{% for m in who %}{{ m.name|lower }} {% endfor %}"
-                 data-overdue="{{ 1 if is_overdue else 0 }}" data-noemp="{{ 1 if is_noemp else 0 }}"
-                 title="Клик — открыть">
-              <div class="kb-card-title">{{ t.title }}{% if is_overdue %}<span class="kb-ov-badge">срок вышел</span>{% endif %}</div>
-              {% if t.description %}<div class="kb-card-desc">{{ t.description }}</div>{% endif %}
-              <div class="kb-card-meta">
-                {% if who %}
-                  <div class="kb-chips">
-                  {% for m in who %}
-                    <span class="kb-chip" style="--kb-c:{% if m.dept %}var(--accent){% else %}var(--muted){% endif %}" title="{{ m.name }}{% if m.dept %} · {{ m.dept }}{% endif %}">{{ m.name }}</span>
-                  {% endfor %}
-                  </div>
-                {% else %}
-                  <span class="emp kb-noemp" title="Нет исполнителя">👤 —</span>
-                {% endif %}
-                {% if t.start_date or t.due_date %}
-                  <span class="dates {% if is_overdue %}over{% endif %}" title="Сроки">
-                    📅 {% if t.start_date %}{{ t.start_date[8:10] }}-{{ t.start_date[5:7] }}{% endif %}–{% if t.due_date %}{{ t.due_date[8:10] }}-{{ t.due_date[5:7] }}{% endif %}
-                  </span>
-                {% endif %}
-              </div>
-            </div>
-            {% else %}
-            <div class="kb-empty">—</div>
-            {% endfor %}
-          </div>
-          <form method="post" action="{{ url_for('board_task_add') }}" class="kb-add-task">
-            <input type="hidden" name="column_id" value="{{ col.id }}">
-            <input type="text" name="title" placeholder="+ задача..." required>
-            <button class="btn btn-xs primary" type="submit">+</button>
-          </form>
-        </div>
-      {% endfor %}
-    </div>
-    {% else %}
-    <div class="card"><div class="empty">
-      Доска пока пуста — создайте первый столбец («+ Столбец»).
-    </div></div>
-    {% endif %}
-  </section>
-
-  <!-- ===================== ГАНТ ===================== -->
-  <section class="gantt-panel">
-    <div class="gantt-head">
-      <div class="panel-title" style="margin:0">Гант · {{ gmonth_name }} {{ gyear }}</div>
-      <div class="spacer"></div>
-      <a class="btn small" href="{{ url_for('board', month=gprev[0], year=gprev[1]) }}">← мес.</a>
-      <a class="btn small" href="{{ url_for('board') }}" title="Текущий месяц">Сегодня</a>
-      <a class="btn small" href="{{ url_for('board', month=gnext[0], year=gnext[1]) }}">мес. →</a>
-    </div>
-
-    {% if gantt_weeks %}
-    <div class="gantt-cal">
-      <table class="gcal-table">
-        <thead>
-          <tr>
-            <th>Пн</th><th>Вт</th><th>Ср</th><th>Чт</th><th>Пт</th><th>Сб</th><th>Вс</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for week in gantt_weeks %}
-          <tr>
-            {% for d in week %}
-              {% if d %}
-              <td class="gcal-cell {% if d.weekend %}gcal-we{% endif %} {% if d.today %}gcal-today{% endif %}">
-                <div class="gcal-in">
-                <span class="gcal-num">{{ d.num }}</span>
-                {% for tst in d.tasks[:4] %}
-                  <span class="gcal-task {% if tst.overdue %}gcal-task-overdue{% endif %}" role="button" tabindex="0"
-                        title="{{ tst.title }} · {{ tst.emp }} · {{ tst.start }} – {{ tst.due }}"
-                        onclick="openCard({{ tst.id }}, this)"
-                        onkeydown="openCardKey(event, {{ tst.id }}, this)">
-                    {{ tst.title }}{% if tst.emp %} ({{ tst.emp }}){% endif %}
-                  </span>
-                {% endfor %}
-                {% if d.tasks|length > 4 %}
-                  <span class="gcal-more">+{{ d.tasks|length - 4 }} ещё</span>
-                {% endif %}
-                </div>
-              </td>
-              {% else %}
-              <td class="gcal-cell gcal-empty"></td>
-              {% endif %}
-            {% endfor %}
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      <div class="sub" style="margin-top:8px">
-        <span style="color:var(--danger)">■</span> просрочено
+    <div class="page-actions">
+      <div class="board-view-switch" role="group" aria-label="Представление доски">
+        <button class="board-view-button" type="button" aria-pressed="true" data-board-view="kanban" onclick="kbSetView('kanban')">Канбан</button>
+        <button class="board-view-button" type="button" aria-pressed="false" data-board-view="calendar" onclick="kbSetView('calendar')">Календарь</button>
+        <button class="board-view-button" type="button" aria-pressed="false" data-board-view="both" onclick="kbSetView('both')">Оба</button>
       </div>
     </div>
-    {% else %}
-    <div class="card"><div class="empty">На месяц нет задач с исполнителем и датами. Они появятся здесь, когда у задачи укажете сотрудника и сроки на канбане.</div></div>
-    {% endif %}
-  </section>
+  </div>
 
+  <div class="board-wrap">
+    <section class="kanban-panel">
+      <div class="board-section-head">
+        <h2 class="section-title">Канбан</h2>
+        <button class="btn small" id="kbAddColumnToggle" type="button" aria-expanded="false" aria-controls="kbAddColumnForm" onclick="kbToggleColumnForm(true)">+ Колонка</button>
+      </div>
+      <form method="post" action="{{ url_for('board_column_add') }}" class="kb-add-column-form" id="kbAddColumnForm" hidden>
+        <label class="visually-hidden" for="kbNewColumnName">Название новой колонки</label>
+        <input id="kbNewColumnName" type="text" name="name" placeholder="Новая колонка..." required>
+        <button class="btn small primary" type="submit">Добавить</button>
+        <button class="btn small" type="button" onclick="kbToggleColumnForm(false)">Отмена</button>
+      </form>
+
+      <div class="filter-bar kb-filter-bar">
+        <label class="visually-hidden" for="kbSearch">Поиск по задачам</label>
+        <input class="grow" type="text" id="kbSearch" placeholder="Поиск по задачам..." oninput="kbApplyFilters()">
+        <label class="visually-hidden" for="kbEmpFilter">Исполнитель</label>
+        <select id="kbEmpFilter" onchange="kbApplyFilters()">
+          <option value="">Все исполнители</option>
+          {% for e in employees %}<option value="{{ e.name }}">{{ e.name }}</option>{% endfor %}
+        </select>
+        <label class="filter-toggle"><input type="checkbox" id="kbOverdueOnly" onchange="kbApplyFilters()"> Просроченные</label>
+        <label class="filter-toggle"><input type="checkbox" id="kbNoEmpOnly" onchange="kbApplyFilters()"> Без исполнителя</label>
+        <button class="btn small" id="kbFilterReset" type="button" onclick="kbResetFilters()">Сбросить</button>
+        <span class="filter-bar-result" id="kbFilterResult" role="status" aria-live="polite"></span>
+      </div>
+
+      {% if cols_view %}
+      <div class="kb-row" id="kbRow">
+        {% for col in cols_view %}
+          {% set tasks = col_tasks.get(col.id, []) %}
+          <div class="kb-col" data-colid="{{ col.id }}"
+               ondragover="event.preventDefault(); this.classList.add('drag-over')"
+               ondragleave="this.classList.remove('drag-over')"
+               ondrop="dropOn(event, {{ col.id }})">
+            <div class="kb-col-head">
+              <button class="kb-grip" type="button" draggable="true" data-cid="{{ col.id }}" ondragstart="dragCol(event)" ondragend="dragEnd(event)"
+                      title="Перетащите колонку или используйте стрелки" aria-label="Изменить порядок колонки {{ col.name }}" onkeydown="kbColumnOrderKey(event)">⠿</button>
+              <span class="kb-col-name">{{ col.name }}</span>
+              <span class="kb-count">{{ tasks|length }}</span>
+              {% if not col.locked %}
+              <details class="action-menu kb-column-menu">
+                <summary class="more-btn kb-column-menu-trigger" aria-label="Действия с колонкой {{ col.name }}">•••</summary>
+                <div class="action-menu-panel kb-column-menu-panel">
+                  <form method="post" action="{{ url_for('board_column_rename', cid=col.id) }}" class="kb-menu-rename-form">
+                    <label class="visually-hidden" for="kbMenuRename{{ col.id }}">Новое название колонки</label>
+                    <input id="kbMenuRename{{ col.id }}" type="text" name="name" value="{{ col.name }}" required>
+                    <button class="action-menu-item" type="submit" data-action="rename-column">Переименовать</button>
+                  </form>
+                  <form method="post" action="{{ url_for('board_column_delete', cid=col.id) }}"
+                        onsubmit="return confirm('Удалить столбец? Задачи из него останутся без столбца.')">
+                    <button class="action-menu-item danger" type="submit">Удалить</button>
+                  </form>
+                </div>
+              </details>
+              {% endif %}
+            </div>
+
+            <div class="kb-col-cards">
+              {% for t in tasks %}
+              {% set who = members.get(t.id, []) %}
+              {% set is_overdue = t.due_date and t.due_date < today_iso %}
+              {% set is_noemp = who|length == 0 %}
+              <div class="kb-card {% if is_overdue %}ov{% endif %}" draggable="true" role="button" tabindex="0"
+                   ondragstart="dragTask(event)" ondragend="dragEnd(event)"
+                   onclick="openCard({{ t.id }}, this)"
+                   onkeydown="openCardKey(event, {{ t.id }}, this)"
+                   data-id="{{ t.id }}"
+                   data-title="{{ (t.title ~ ((' ' ~ t.description) if t.description else ''))|lower }}"
+                   data-emp="{% for m in who %}{{ m.name|lower }} {% endfor %}"
+                   data-overdue="{{ 1 if is_overdue else 0 }}" data-noemp="{{ 1 if is_noemp else 0 }}"
+                   title="Клик — открыть">
+                <div class="kb-card-title">{{ t.title }}{% if is_overdue %}<span class="kb-ov-badge">срок вышел</span>{% endif %}</div>
+                {% if t.description %}<div class="kb-card-desc">{{ t.description }}</div>{% endif %}
+                <div class="kb-card-meta">
+                  {% if who %}
+                    <div class="kb-chips">
+                    {% for m in who %}
+                      <span class="kb-chip" style="--kb-c:{% if m.dept %}var(--accent){% else %}var(--muted){% endif %}" title="{{ m.name }}{% if m.dept %} · {{ m.dept }}{% endif %}">{{ m.name }}</span>
+                    {% endfor %}
+                    </div>
+                  {% else %}
+                    <span class="emp kb-noemp" title="Нет исполнителя">Без исполнителя</span>
+                  {% endif %}
+                  {% if t.start_date or t.due_date %}
+                    <span class="dates {% if is_overdue %}over{% endif %}" title="Сроки">
+                      Срок: {% if t.start_date %}{{ t.start_date[8:10] }}-{{ t.start_date[5:7] }}{% endif %}–{% if t.due_date %}{{ t.due_date[8:10] }}-{{ t.due_date[5:7] }}{% endif %}
+                    </span>
+                  {% endif %}
+                </div>
+              </div>
+              {% else %}
+              <div class="kb-empty empty-state">
+                <div class="empty-state-title">Пока нет задач</div>
+                <div class="empty-state-text">Добавьте задачу или перетащите её сюда.</div>
+              </div>
+              {% endfor %}
+            </div>
+            <form method="post" action="{{ url_for('board_task_add') }}" class="kb-add-task">
+              <input type="hidden" name="column_id" value="{{ col.id }}">
+              <label class="visually-hidden" for="kbTaskTitle{{ col.id }}">Новая задача в колонке {{ col.name }}</label>
+              <input id="kbTaskTitle{{ col.id }}" type="text" name="title" placeholder="+ задача..." required>
+              <button class="btn btn-xs primary" type="submit" aria-label="Добавить задачу">+</button>
+            </form>
+          </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <div class="empty-state-title">Доска пока пуста</div>
+        <div class="empty-state-text">Создайте первую колонку кнопкой «+ Колонка».</div>
+      </div>
+      {% endif %}
+    </section>
+
+    <section class="gantt-panel">
+      <div class="gantt-head">
+        <h2 class="section-title">Календарь сроков · {{ gmonth_name }} {{ gyear }}</h2>
+        <div class="spacer"></div>
+        <a class="btn small" href="{{ url_for('board', month=gprev[0], year=gprev[1]) }}">← мес.</a>
+        <a class="btn small" href="{{ url_for('board') }}" title="Текущий месяц">Сегодня</a>
+        <a class="btn small" href="{{ url_for('board', month=gnext[0], year=gnext[1]) }}">мес. →</a>
+      </div>
+
+      {% if gantt_weeks %}
+      <div class="gantt-cal">
+        <table class="gcal-table">
+          <thead><tr><th>Пн</th><th>Вт</th><th>Ср</th><th>Чт</th><th>Пт</th><th>Сб</th><th>Вс</th></tr></thead>
+          <tbody>
+            {% for week in gantt_weeks %}
+            <tr>
+              {% for d in week %}
+                {% if d %}
+                <td class="gcal-cell {% if d.weekend %}gcal-we{% endif %} {% if d.today %}gcal-today{% endif %}">
+                  <div class="gcal-in">
+                  <span class="gcal-num">{{ d.num }}</span>
+                  {% for tst in d.tasks[:4] %}
+                    <span class="gcal-task {% if tst.overdue %}gcal-task-overdue{% endif %}" role="button" tabindex="0"
+                          title="{{ tst.title }} · {{ tst.emp }} · {{ tst.start }} – {{ tst.due }}"
+                          onclick="openCard({{ tst.id }}, this)"
+                          onkeydown="openCardKey(event, {{ tst.id }}, this)">
+                      {{ tst.title }}{% if tst.emp %} ({{ tst.emp }}){% endif %}
+                    </span>
+                  {% endfor %}
+                  {% if d.tasks|length > 4 %}<span class="gcal-more">+{{ d.tasks|length - 4 }} ещё</span>{% endif %}
+                  </div>
+                </td>
+                {% else %}<td class="gcal-cell gcal-empty"></td>{% endif %}
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <div class="calendar-legend"><span aria-hidden="true">■</span> просрочено</div>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <div class="empty-state-title">На этот месяц нет задач со сроками</div>
+        <div class="empty-state-text">Задачи появятся здесь после указания сроков на канбане.</div>
+      </div>
+      {% endif %}
+    </section>
+  </div>
+
+  <div class="kb-zones">
+    <div class="kb-zone" data-zone="archive" ondragover="event.preventDefault(); this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="dropZone(event, 'archive')">
+      <span class="kb-zone-ico">🗄</span><span class="kb-zone-label">Архив · {{ archive_cnt }}</span><a class="btn btn-xs" href="{{ url_for('board_archive') }}">открыть</a>
+    </div>
+    <div class="kb-zone danger-zone" data-zone="trash" ondragover="event.preventDefault(); this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="dropZone(event, 'trash')">
+      <span class="kb-zone-ico">🗑</span><span class="kb-zone-label">Корзина · {{ trash_cnt }}</span><a class="btn btn-xs" href="{{ url_for('board_trash') }}">открыть</a>
+    </div>
+  </div>
 </div>
 
-<!-- ===================== ЗОНЫ АРХИВ / КОРЗИНА ===================== -->
-<div class="kb-zones">
-  <div class="kb-zone" data-zone="archive"
-       ondragover="event.preventDefault(); this.classList.add('drag-over')"
-       ondragleave="this.classList.remove('drag-over')"
-       ondrop="dropZone(event, 'archive')">
-    <span class="kb-zone-ico">🗄</span>
-    <span class="kb-zone-label">Архив · {{ archive_cnt }}</span>
-    <a class="btn btn-xs" href="{{ url_for('board_archive') }}">открыть</a>
-  </div>
-  <div class="kb-zone danger-zone" data-zone="trash"
-       ondragover="event.preventDefault(); this.classList.add('drag-over')"
-       ondragleave="this.classList.remove('drag-over')"
-       ondrop="dropZone(event, 'trash')">
-    <span class="kb-zone-ico">🗑</span>
-    <span class="kb-zone-label">Корзина · {{ trash_cnt }}</span>
-    <a class="btn btn-xs" href="{{ url_for('board_trash') }}">открыть</a>
-  </div>
-</div>
-
-<!-- модалка карточки -->
 <div class="modal-overlay" id="card-modal">
   <div class="modal-card" tabindex="-1">
-    <div class="modal-head">
-      <span class="modal-title" id="card-modal-title"></span>
-      <button class="modal-x" id="card-modal-close" title="Закрыть" aria-label="Закрыть">✕</button>
-    </div>
+    <div class="modal-head"><span class="modal-title" id="card-modal-title"></span><button class="modal-x" id="card-modal-close" title="Закрыть" aria-label="Закрыть">✕</button></div>
     <div class="modal-body" id="card-modal-body"></div>
   </div>
 </div>
 
 <script>
-/* Drag & drop карточек между столбцами канбана */
+function kbSetView(view) {
+  if (['kanban', 'calendar', 'both'].indexOf(view) === -1) view = 'kanban';
+  var page = document.getElementById('boardPage');
+  page.dataset.boardView = view;
+  document.querySelectorAll('.board-view-button').forEach(function (button) {
+    button.setAttribute('aria-pressed', String(button.dataset.boardView === view));
+  });
+  try { localStorage.setItem('tb_board_view', view); } catch (e) {}
+}
+(function () {
+  var saved = 'kanban';
+  try { saved = localStorage.getItem('tb_board_view') || 'kanban'; } catch (e) {}
+  if (window.matchMedia('(max-width: 860px)').matches && saved === 'both') saved = 'kanban';
+  kbSetView(saved);
+})();
+
+function kbToggleColumnForm(open) {
+  var form = document.getElementById('kbAddColumnForm');
+  var button = document.getElementById('kbAddColumnToggle');
+  form.hidden = !open;
+  button.setAttribute('aria-expanded', String(open));
+  if (open) document.getElementById('kbNewColumnName').focus();
+}
+document.getElementById('kbAddColumnForm').addEventListener('keydown', function (event) {
+  if (event.key === 'Escape') { event.preventDefault(); kbToggleColumnForm(false); document.getElementById('kbAddColumnToggle').focus(); }
+});
+function kbColumnOrderKey(event) {
+  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowUp' && event.key !== 'ArrowRight' && event.key !== 'ArrowDown') return;
+  event.preventDefault();
+  var column = event.currentTarget.closest('.kb-col');
+  var columns = Array.from(document.querySelectorAll('#kbRow .kb-col'));
+  var index = columns.indexOf(column);
+  var forward = event.key === 'ArrowRight' || event.key === 'ArrowDown';
+  if ((!forward && index <= 0) || (forward && index >= columns.length - 1)) return;
+  var before = forward ? (columns[index + 2] ? columns[index + 2].dataset.colid : null) : columns[index - 1].dataset.colid;
+  moveCol(column.dataset.colid, before);
+}
+
 let draggedId = null;
 let draggedColId = null;
 function dragCol(ev) {
-  if (ev.target !== ev.currentTarget) return;   /* drag только за саму ручку */
-  draggedId = null;                              /* начало переноса столбца, а не карточки */
-  draggedColId = ev.currentTarget.dataset.cid ? ev.currentTarget.dataset.cid
-                : ev.currentTarget.closest('.kb-col').dataset.colid;
+  if (ev.target !== ev.currentTarget) return;
+  draggedId = null;
+  draggedColId = ev.currentTarget.dataset.cid ? ev.currentTarget.dataset.cid : ev.currentTarget.closest('.kb-col').dataset.colid;
   ev.dataTransfer.effectAllowed = 'move';
   ev.dataTransfer.setData('text/plain', draggedColId);
 }
-function dragEnd() {
-  /* сброс обоих «залипших» id — отмена drag иначе тащит прежний объект */
-  draggedId = null;
-  draggedColId = null;
-}
+function dragEnd() { draggedId = null; draggedColId = null; }
 function dropOn(ev, colId) {
-  if (draggedColId) {           /* перетаскивание столбца */
-    ev.preventDefault();
-    ev.currentTarget.classList.remove('drag-over');
-    moveCol(draggedColId, colId);
-    draggedColId = null;
-    return;
-  }
-  dropTask(ev, colId);          /* перетаскивание карточки — прежняя логика */
+  if (draggedColId) { ev.preventDefault(); ev.currentTarget.classList.remove('drag-over'); moveCol(draggedColId, colId); draggedColId = null; return; }
+  dropTask(ev, colId);
 }
 function moveCol(cid, beforeCid) {
-  var fd = new FormData();
-  fd.append('before', beforeCid === null ? '' : beforeCid);
-  window.postForm({
-    url: '/board/column/' + encodeURIComponent(cid) + '/move',
-    body: fd, method: 'POST', checkOk: true,
-    errText: 'Не удалось переместить столбец.',
-    onSuccess: function () { location.reload(); }
-  });
+  var fd = new FormData(); fd.append('before', beforeCid === null ? '' : beforeCid);
+  window.postForm({ url: '/board/column/' + encodeURIComponent(cid) + '/move', body: fd, method: 'POST', checkOk: true, errText: 'Не удалось переместить столбец.', onSuccess: function () { location.reload(); } });
 }
 function dragTask(ev) {
-  draggedColId = null;                          /* начало переноса карточки, а не столбца */
-  draggedId = ev.currentTarget.dataset.id;
-  ev.dataTransfer.effectAllowed = 'move';
-  ev.dataTransfer.setData('text/plain', ev.currentTarget.dataset.id);
-  /* Кастомное привидение: копия ТОЛЬКО карточки, компактная и непрозрачная.
-     По умолчанию браузер отрисовывает карточку во всю ширину столбца (flex),
-     из-за чего при перетаскивании «ездит» весь столбец. */
-  const card = ev.currentTarget;
-  const ghost = card.cloneNode(true);
-  ghost.classList.add('kb-drag-ghost');
-  ghost.style.position = 'fixed';
-  ghost.style.top = '-1000px';
-  ghost.style.left = '-1000px';
-  ghost.style.width = '220px';
-  ghost.querySelectorAll('input, button').forEach(function (el) { el.remove(); });
-  document.body.appendChild(ghost);
-  ev.dataTransfer.setDragImage(ghost, 30, 20);
+  draggedColId = null; draggedId = ev.currentTarget.dataset.id;
+  ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setData('text/plain', ev.currentTarget.dataset.id);
+  const card = ev.currentTarget; const ghost = card.cloneNode(true);
+  ghost.classList.add('kb-drag-ghost'); ghost.style.position = 'fixed'; ghost.style.top = '-1000px'; ghost.style.left = '-1000px'; ghost.style.width = '220px';
+  ghost.querySelectorAll('input, button').forEach(function (el) { el.remove(); }); document.body.appendChild(ghost); ev.dataTransfer.setDragImage(ghost, 30, 20);
   requestAnimationFrame(function () { setTimeout(function () { ghost.remove(); }, 0); });
 }
 function dropTask(ev, colId) {
-  ev.preventDefault();
-  ev.currentTarget.classList.remove('drag-over');
-  if (!draggedId) return;
-  var id = encodeURIComponent(draggedId);
-  var fd = new FormData();
-  fd.append('column_id', colId === null ? '' : colId);
-  window.postForm({
-    url: '/board/task/' + id + '/move', body: fd, method: 'POST', checkOk: true,
-    errText: 'Не удалось переместить задачу.',
-    onSuccess: function () { location.reload(); }
-  });
+  ev.preventDefault(); ev.currentTarget.classList.remove('drag-over'); if (!draggedId) return;
+  var id = encodeURIComponent(draggedId); var fd = new FormData(); fd.append('column_id', colId === null ? '' : colId);
+  window.postForm({ url: '/board/task/' + id + '/move', body: fd, method: 'POST', checkOk: true, errText: 'Не удалось переместить задачу.', onSuccess: function () { location.reload(); } });
   draggedId = null;
 }
 function dropZone(ev, zone) {
-  ev.preventDefault();
-  ev.currentTarget.classList.remove('drag-over');
-  if (!draggedId || draggedColId) return;   /* зоны слоёв — только для карточек */
-  var id = encodeURIComponent(draggedId);
-  var url = zone === 'archive' ? '/board/task/' + id + '/archive' : '/board/task/' + id + '/trash';
-  window.postForm({
-    url: url, method: 'POST', checkOk: true,
-    errText: zone === 'archive' ? 'Не удалось отправить в архив.' : 'Не удалось отправить в корзину.',
-    onSuccess: function () { location.reload(); }
-  });
-  draggedId = null;
+  ev.preventDefault(); ev.currentTarget.classList.remove('drag-over'); if (!draggedId || draggedColId) return;
+  var id = encodeURIComponent(draggedId); var url = zone === 'archive' ? '/board/task/' + id + '/archive' : '/board/task/' + id + '/trash';
+  window.postForm({ url: url, method: 'POST', checkOk: true, errText: zone === 'archive' ? 'Не удалось отправить в архив.' : 'Не удалось отправить в корзину.', onSuccess: function () { location.reload(); } }); draggedId = null;
 }
 
-/* Модалка карточки (доступный диалог: фокус-ловушка, dirty-state, возврат фокуса). */
 var cardModal = window.initModal({
   overlay: document.getElementById('card-modal'),
   getBody: function () { return document.getElementById('card-modal-body'); },
@@ -293,67 +283,41 @@ var cardModal = window.initModal({
 });
 function openCard(id, trigger) {
   var returnFocus = trigger || document.activeElement;
-  fetch('/board/task/' + encodeURIComponent(id) + '/card')
-    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
-    .then(function (html) {
-          document.getElementById('card-modal-body').innerHTML = html;
-          document.getElementById('card-modal-title').textContent = 'Карточка';
-          window.cardModal && cardModal.setDirty(false);
-          cardModal.open(returnFocus);
-        })
-    .catch(function () { alert('Не удалось открыть карточку'); });
+  fetch('/board/task/' + encodeURIComponent(id) + '/card').then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); }).then(function (html) {
+    document.getElementById('card-modal-body').innerHTML = html; document.getElementById('card-modal-title').textContent = 'Карточка'; cardModal.setDirty(false); cardModal.open(returnFocus);
+  }).catch(function () { alert('Не удалось открыть карточку'); });
 }
-function openCardKey(event, id, trigger) {
-  if (event.key !== 'Enter' && event.key !== ' ') return;
-  event.preventDefault();
-  openCard(id, trigger);
-}
+function openCardKey(event, id, trigger) { if (event.key !== 'Enter' && event.key !== ' ') return; event.preventDefault(); openCard(id, trigger); }
 function closeCard() { if (cardModal) cardModal.close(); }
 document.getElementById('card-modal-close').addEventListener('click', function (e) { e.stopPropagation(); if (cardModal) cardModal.close(); });
-
-/* Живой поиск исполнителя в модалке карточки (глобальная функция: инлайн-скрипт
-   из фрагмента модалки НЕ выполняется браузером через innerHTML, поэтому он здесь). */
 function tmFilterEmployees(inp) {
-  var q = inp.value.trim().toLowerCase();
-  var labels = document.querySelectorAll('#tm-employee-list .tm-emp');
-  var shown = 0;
-  labels.forEach(function (l) {
-    var hit = !q || (l.dataset.name ? l.dataset.name.indexOf(q) !== -1 : false);
-    l.style.display = hit ? '' : 'none';
-    if (hit) shown++;
-  });
-  var none = document.getElementById('tm-no-match');
-  if (none) none.style.display = shown ? 'none' : '';
+  var q = inp.value.trim().toLowerCase(); var labels = document.querySelectorAll('#tm-employee-list .tm-emp'); var shown = 0;
+  labels.forEach(function (label) { var hit = !q || (label.dataset.name ? label.dataset.name.indexOf(q) !== -1 : false); label.style.display = hit ? '' : 'none'; if (hit) shown++; });
+  var none = document.getElementById('tm-no-match'); if (none) none.style.display = shown ? 'none' : '';
 }
-
-/* Фильтрация карточек на доске: поиск по тексту, исполнителю, просроченные, без исполнителя */
 function kbApplyFilters() {
   var q = (document.getElementById('kbSearch').value || '').trim().toLowerCase();
   var emp = (document.getElementById('kbEmpFilter').value || '').trim().toLowerCase();
-  var overOnly = document.getElementById('kbOverdueOnly').checked;
-  var noEmpOnly = document.getElementById('kbNoEmpOnly').checked;
-  var empty = document.getElementById('kbFilterEmpty');
-  var shown = 0;
+  var overOnly = document.getElementById('kbOverdueOnly').checked; var noEmpOnly = document.getElementById('kbNoEmpOnly').checked; var shown = 0;
   document.querySelectorAll('#kbRow .kb-col').forEach(function (col) {
     var colShown = 0;
-    var cards = col.querySelectorAll('.kb-card');
-    cards.forEach(function (card) {
-      var ok = true;
-      if (q) {
-        var hay = (card.dataset.title || '') + ' ' + (card.dataset.desc || '');
-        if (hay.indexOf(q) === -1) ok = false;
-      }
+    col.querySelectorAll('.kb-card').forEach(function (card) {
+      var ok = true; if (q && (card.dataset.title || '').indexOf(q) === -1) ok = false;
       if (ok && emp && (card.dataset.emp || '').indexOf(emp) === -1) ok = false;
       if (ok && overOnly && card.dataset.overdue !== '1') ok = false;
       if (ok && noEmpOnly && card.dataset.noemp !== '1') ok = false;
-      card.style.display = ok ? '' : 'none';
-      if (ok) { colShown++; shown++; }
+      card.style.display = ok ? '' : 'none'; if (ok) { colShown++; shown++; }
     });
-    var colEmpty = col.querySelector('.kb-empty');
-    if (colEmpty) { colEmpty.style.display = colShown ? 'none' : ''; }
+    var empty = col.querySelector('.kb-empty'); if (empty) empty.style.display = colShown ? 'none' : '';
     col.querySelector('.kb-count').textContent = colShown;
   });
+  document.getElementById('kbFilterResult').textContent = 'Найдено: ' + shown;
 }
+function kbResetFilters() {
+  document.getElementById('kbSearch').value = ''; document.getElementById('kbEmpFilter').value = '';
+  document.getElementById('kbOverdueOnly').checked = false; document.getElementById('kbNoEmpOnly').checked = false; kbApplyFilters();
+}
+kbApplyFilters();
 </script>
 
 {% endblock %}
