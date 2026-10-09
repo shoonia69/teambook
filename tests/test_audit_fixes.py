@@ -65,6 +65,24 @@ def test_board_badge_excludes_overdue_todo(app_env, client):
     assert re.search(r'Доска<span class="nav-badge">(\d+)</span>', html) is None
 
 
+def test_board_card_displays_dates_as_day_month(app_env, client):
+    execute(app_env, "INSERT INTO kb_columns(name) VALUES (?)", ("Dates",))
+    column_id = fetch_all(
+        app_env, "SELECT id FROM kb_columns WHERE name='Dates'"
+    )[0]["id"]
+    execute(
+        app_env,
+        """INSERT INTO kb_tasks(column_id, title, start_date, due_date)
+           VALUES (?, ?, ?, ?)""",
+        (column_id, "Date format card", "2030-05-07", "2030-11-23"),
+    )
+
+    html = client.get("/board").get_data(as_text=True)
+
+    assert "📅 07-05–23-11" in html
+    assert "📅 05-07–11-23" not in html
+
+
 def test_archive_links_to_next_day(client):
     yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
     html = client.get("/todo/archive?date=" + yesterday).get_data(as_text=True)

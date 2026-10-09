@@ -85,7 +85,7 @@
                 {% endif %}
                 {% if t.start_date or t.due_date %}
                   <span class="dates {% if is_overdue %}over{% endif %}" title="Сроки">
-                    📅 {% if t.start_date %}{{ t.start_date[5:] }}{% endif %}–{% if t.due_date %}{{ t.due_date[5:] }}{% endif %}
+                    📅 {% if t.start_date %}{{ t.start_date[8:10] }}-{{ t.start_date[5:7] }}{% endif %}–{% if t.due_date %}{{ t.due_date[8:10] }}-{{ t.due_date[5:7] }}{% endif %}
                   </span>
                 {% endif %}
               </div>
