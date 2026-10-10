@@ -812,3 +812,27 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
 .eisen-quad.q-nu { border-top: 3px solid #f1c40f; }
 .eisen-quad.q-nn { border-top: 3px solid var(--accent); }
 @media (max-width: 700px) { .eisen-row { grid-template-columns: 1fr; } }
+
+/* ---------- карточка сотрудника ---------- */
+.employee-summary { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-5); margin-bottom: var(--space-4); box-shadow: var(--shadow-sm); }
+.employee-summary-head { display: flex; align-items: flex-start; gap: var(--space-4); }
+.employee-summary-head > div:first-child { flex: 1; }
+.employee-summary-head .page-title { margin: 0 0 4px; }
+.employee-summary-head .helper-text { margin: 0; }
+.employee-summary-actions { display: flex; align-items: center; gap: var(--space-2); }
+.employee-actions > summary, .year-actions > summary { list-style: none; }
+.employee-actions > summary::-webkit-details-marker, .year-actions > summary::-webkit-details-marker { display: none; }
+.employee-actions[open] > .action-menu-panel, .year-actions[open] > .action-menu-panel { display: block; }
+.employee-actions form { margin: 0; }
+.action-menu-separator { height: 1px; background: var(--border); margin: var(--space-1) 0; }
+.employee-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); margin-top: var(--space-4); }
+.employee-facts > div { padding: var(--space-3); background: var(--panel2); border-radius: var(--radius-md); }
+.employee-facts span, .employee-facts strong { display: block; }
+.employee-facts span { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+.employee-summary .emp-tags { margin-top: var(--space-3); }
+.employee-tabs { display: flex; gap: var(--space-1); overflow-x: auto; border-bottom: 1px solid var(--border); margin-bottom: var(--space-4); }
+.employee-tabs button { border: 0; background: transparent; color: var(--muted); padding: 10px 13px; white-space: nowrap; cursor: pointer; border-bottom: 2px solid transparent; }
+.employee-tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+.employee-overview-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.employee-tab-panel[hidden], details.accordion[hidden] { display: none; }
+@media (max-width: 700px) { .employee-summary-head { flex-wrap: wrap; } .employee-summary-actions { width: 100%; } .employee-facts, .employee-overview-grid { grid-template-columns: 1fr; } }

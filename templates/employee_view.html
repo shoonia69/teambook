@@ -3,30 +3,37 @@
 {% block content %}
 
 <!-- Карточка сотрудника -->
-<div class="card">
-  <div class="toolbar" style="margin-bottom:8px">
-    <h2 style="margin:0">{{ emp.name }}</h2>
-    <div class="spacer"></div>
-    <a class="btn small" href="{{ url_for('employee_edit', eid=emp.id) }}">Редактировать</a>
-    <form method="post" action="{{ url_for('employee_delete', eid=emp.id) }}"
-          onsubmit="return confirm('Удалить сотрудника «{{ emp.name }}» и все записи?')">
-      <button class="btn small danger" type="submit">Удалить</button>
-    </form>
+<section class="employee-summary">
+  <div class="employee-summary-head">
+    <div><h2 class="page-title">{{ emp.name }}</h2><p class="helper-text">{{ emp.position or 'Должность не указана' }}{% if emp.department %} · {{ emp.department }}{% endif %}</p></div>
+    <div class="employee-summary-actions">
+      <a class="btn primary" href="{{ url_for('employee_edit', eid=emp.id) }}">Редактировать</a>
+      <details class="action-menu employee-actions"><summary class="more-btn" aria-label="Действия с сотрудником">•••</summary>
+        <div class="action-menu-panel">
+          <a class="action-menu-item" href="{{ url_for('report_employee', eid=emp.id, year=year or now_year, format='xlsx') }}">Скачать Excel</a>
+          <a class="action-menu-item" href="{{ url_for('report_employee', eid=emp.id, year=year or now_year, format='pdf') }}">Скачать PDF</a>
+          <div class="action-menu-separator"></div>
+          <form method="post" action="{{ url_for('employee_delete', eid=emp.id) }}" onsubmit="return confirm('Удалить сотрудника «{{ emp.name }}» и все записи?')"><button class="action-menu-item danger" type="submit">Удалить сотрудника</button></form>
+        </div>
+      </details>
+    </div>
   </div>
-  <div style="color:var(--muted)">
-    {{ emp.position or '—' }}{% if emp.position and emp.department %} · {% endif %}{{ emp.department or '' }}
-    {% if emp.salary %} · <strong style="color:var(--text)">{{ emp.salary }}</strong>{% endif %}
-    {% if emp.hire_date %} · <span title="Дата приёма на работу">принят с {{ (emp.hire_date or '')[:10] }}</span>{% endif %}
+  <div class="employee-facts">
+    <div><span>Зарплата</span><strong>{{ emp.salary or 'Не указана' }}</strong></div><div><span>Дата найма</span><strong>{% if emp.hire_date %}принят с {{ (emp.hire_date or '')[:10] }}{% else %}Не указана{% endif %}</strong></div>
+    <div><span>Активные проблемы</span><strong>{{ problems|length }}</strong></div><div><span>Последняя 1-на-1</span><strong>{{ (meetings[0].date or '')[:10] if meetings else 'Нет встреч' }}</strong></div>
   </div>
-  {% if emp_tags %}
-  <div class="emp-tags" style="margin-top:10px">
-    {% for t in emp_tags %}
-      <span class="tag-chip" style="--c:{{ t.color }}">{{ t.name }}</span>
-    {% endfor %}
-  </div>
-  {% endif %}
-</div>
+  {% if emp_tags %}<div class="emp-tags">{% for t in emp_tags %}<span class="tag-chip" style="--c:{{ t.color }}">{{ t.name }}</span>{% endfor %}</div>{% endif %}
+</section>
 
+<nav class="employee-tabs" role="tablist" aria-label="Разделы карточки сотрудника">
+  <button type="button" id="employee-tab-overview" role="tab" aria-controls="employee-panel-overview" data-employee-tab="overview">Обзор</button><button type="button" id="employee-tab-development" role="tab" aria-controls="employee-panel-development" data-employee-tab="development">Развитие</button>
+  <button type="button" id="employee-tab-meetings" role="tab" aria-controls="employee-panel-meetings" data-employee-tab="meetings">1-на-1</button><button type="button" id="employee-tab-history" role="tab" aria-controls="employee-panel-history" data-employee-tab="history">История</button><button type="button" id="employee-tab-problems" role="tab" aria-controls="employee-panel-problems" data-employee-tab="problems">Проблемы</button>
+</nav>
+<section id="employee-panel-overview" class="employee-tab-panel employee-overview" role="tabpanel" aria-labelledby="employee-tab-overview" data-employee-panel="overview">
+  <div class="employee-overview-grid"><div class="card"><h3 class="card-title">Заметки</h3><div class="body-text">{{ emp.notes or 'Заметок пока нет' }}</div></div><div class="card"><h3 class="card-title">Текущий год</h3><div class="body-text">{% if year %}{{ year }} · записей: {{ records|length }}{% else %}Год ещё не создан{% endif %}</div></div><div class="card"><h3 class="card-title">Активные проблемы</h3><div class="body-text">{% if problems %}{{ problems[0].text }}{% else %}Проблем нет{% endif %}</div></div><div class="card"><h3 class="card-title">Последняя 1-на-1</h3><div class="body-text">{% if meetings %}{{ meetings[0].date }} · {{ meetings[0].summary }}{% else %}Встреч пока нет{% endif %}</div></div></div>
+</section>
+
+<section id="employee-panel-history" class="employee-tab-panel" role="tabpanel" aria-labelledby="employee-tab-history" data-employee-panel="history">
 <!-- История изменений должности/зарплаты -->
 <details class="card accordion" data-acc="history">
   <summary class="acc-summary"><span class="acc-title">История изменения должности и зарплаты</span>
@@ -129,6 +136,9 @@
   </div>
 </details>
 
+</section>
+
+<section class="employee-notes-section">
 <!-- Случайные заметки о сотруднике -->
 <details class="card accordion" data-acc="notes" open>
   <summary class="acc-summary"><span class="acc-title">Заметки</span>
@@ -146,6 +156,9 @@
   </div>
 </details>
 
+</section>
+
+<section id="employee-panel-development" class="employee-tab-panel" role="tabpanel" aria-labelledby="employee-tab-development" data-employee-panel="development">
 <!-- Выбор года -->
 <div class="toolbar">
   <div class="year-tabs">
@@ -166,14 +179,12 @@
     <button class="btn small primary" type="submit">Создать</button>
   </form>
   {% if year in years %}
-  <form method="post" action="{{ url_for('employee_year_delete', eid=emp.id) }}" style="margin:0"
-        onsubmit="return confirm('Удалить {{ year }} год и все записи за него? Это действие необратимо.')">
-    <input type="hidden" name="year" value="{{ year }}">
-    <button class="btn small danger" type="submit">Удалить год {{ year }}</button>
-  </form>
+  <details class="action-menu year-actions"><summary class="more-btn" aria-label="Действия с {{ year }} годом">•••</summary><div class="action-menu-panel">
+    <form method="post" action="{{ url_for('employee_year_delete', eid=emp.id) }}" onsubmit="return confirm('Удалить {{ year }} год и все записи за него? Это действие необратимо.')">
+      <input type="hidden" name="year" value="{{ year }}"><button class="action-menu-item danger" type="submit">Удалить год {{ year }}</button>
+    </form>
+  </div></details>
   {% endif %}
-  <a class="btn small primary" href="{{ url_for('report_employee', eid=emp.id, year=year or now_year, format='xlsx') }}">⬇ Excel</a>
-  <a class="btn small primary" href="{{ url_for('report_employee', eid=emp.id, year=year or now_year, format='pdf') }}">⬇ PDF</a>
 </div>
 
 <!-- Полугодовые записи -->
@@ -243,6 +254,9 @@
 </details>
 {% endif %}
 
+</section>
+
+<section id="employee-panel-problems" class="employee-tab-panel" role="tabpanel" aria-labelledby="employee-tab-problems" data-employee-panel="problems">
 <!-- Проблемы сейчас -->
 <details class="card accordion" data-acc="problems">
   <summary class="acc-summary"><span class="acc-title">Проблемы в работе</span>
@@ -283,6 +297,9 @@
   </div>
 </details>
 
+</section>
+
+<section id="employee-panel-meetings" class="employee-tab-panel" role="tabpanel" aria-labelledby="employee-tab-meetings" data-employee-panel="meetings">
 <!-- Встречи 1-на-1 -->
 <details class="card accordion" data-acc="meetings">
   <summary class="acc-summary"><span class="acc-title">Встречи 1-на-1</span>
@@ -317,7 +334,46 @@
   </div>
 </details>
 
+</section>
+
 <script>
+/* Вкладки — progressive enhancement: до запуска JS все секции ниже остаются видимыми. */
+(function () {
+  var tabs = Array.from(document.querySelectorAll('[data-employee-tab]'));
+  var panels = Array.from(document.querySelectorAll('[data-employee-panel]'));
+  var valid = tabs.map(function (tab) { return tab.dataset.employeeTab; });
+  function selectTab(name, focus) {
+    if (valid.indexOf(name) === -1) name = 'overview';
+    tabs.forEach(function (tab) {
+      var active = tab.dataset.employeeTab === name;
+      tab.setAttribute('aria-selected', active ? 'true' : 'false'); tab.tabIndex = active ? 0 : -1;
+      if (active && focus) tab.focus();
+    });
+    panels.forEach(function (panel) { panel.hidden = panel.dataset.employeePanel !== name; });
+  }
+  tabs.forEach(function (tab, index) {
+    tab.addEventListener('click', function () { window.location.hash = tab.dataset.employeeTab; selectTab(tab.dataset.employeeTab); });
+    tab.addEventListener('keydown', function (event) {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      event.preventDefault(); var next = (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+      window.location.hash = tabs[next].dataset.employeeTab; selectTab(tabs[next].dataset.employeeTab, true);
+    });
+  });
+  window.addEventListener('hashchange', function () { selectTab(window.location.hash.slice(1)); });
+  selectTab(window.location.hash.slice(1) || 'overview');
+})();
+
+/* Предупреждение о несохранённых изменениях длинных форм развития. */
+(function () {
+  var dirty = false;
+  document.querySelectorAll('[data-employee-panel="development"] .semester-block form').forEach(function (form) {
+    form.addEventListener('input', function () { dirty = true; });
+    form.addEventListener('change', function () { dirty = true; });
+    form.addEventListener('formdata', function () { dirty = false; });
+  });
+  window.addEventListener('beforeunload', function (event) { if (dirty) { event.preventDefault(); event.returnValue = ''; } });
+})();
+
 /* Сохраняем развёрнутость спойлеров в localStorage */
 (function () {
   var KEY = 'teambook-acc';
