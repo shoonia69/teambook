@@ -315,7 +315,7 @@ def test_todo_backlog_matrix_archive_edit_order_and_delegate(app_env, client, em
         "title": "Туду-задача Б (ред)", "due_date": "2030-06-15", "tag": "люди",
     })
     page = client.get("/todo").get_data(as_text=True)
-    assert "06-15" in page and "todo-tag" in page
+    assert "15-06" in page and "todo-tag" in page
     assert 'id="todoSearch"' in page and 'id="todoTagFilter"' in page
     assert "applyTpl" not in page and "Быстрое добавление" not in page
     assert 'id="themeToggle"' in page and "toggleTheme" in page

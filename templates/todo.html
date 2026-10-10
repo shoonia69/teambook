@@ -2,117 +2,114 @@
 {% block title %}Мои задачи · TeamBook{% endblock %}
 {% block content %}
 
-<div class="page-head">
-  <h2>📋 Мои задачи</h2>
-  <span class="sub" style="font-size:13px">
-    Новые задачи — в 📥 Бэклог, оттуда перетаскивайте в квадранты матрицы.
-  </span>
-  <div class="spacer"></div>
-  <a class="btn" href="{{ url_for('todo_archive') }}">🗄 Архив ({{ archive|length }})</a>
+<header class="page-header todo-page-header">
+  <div>
+    <h2 class="page-title">Мои задачи</h2>
+    <p class="helper-text">Новые задачи попадают в Бэклог. Распределяйте их по матрице приоритетов.</p>
   </div>
+  <a class="btn" href="{{ url_for('todo_archive') }}">Архив · {{ archive|length }}</a>
+</header>
 
-  <!-- поиск и фильтр по тегу — самый верх страницы -->
-  <div class="compact-filter">
-      <input type="text" id="todoSearch" placeholder="Поиск / (клавиша «/»)" oninput="todoApplyFilter()">
-      {% if all_tags %}
-      <select id="todoTagFilter" onchange="todoApplyFilter()">
-        <option value="">Все теги</option>
-        {% for tg in all_tags %}<option value="{{ tg }}">{{ tg }}</option>{% endfor %}
-      </select>
-      <button class="btn btn-xs" type="button" title="Сбросить фильтры" onclick="document.getElementById('todoSearch').value='';document.getElementById('todoTagFilter').value='';todoApplyFilter();">✕</button>
-      {% endif %}
-    </div>
+<div class="filter-bar todo-filter-bar">
+  <input type="search" id="todoSearch" placeholder="Поиск задач — клавиша /" aria-label="Поиск задач" oninput="todoApplyFilter()">
+  {% if all_tags %}
+  <select id="todoTagFilter" aria-label="Фильтр по тегу" onchange="todoApplyFilter()">
+    <option value="">Все теги</option>
+    {% for tg in all_tags %}<option value="{{ tg }}">{{ tg }}</option>{% endfor %}
+  </select>
+  {% endif %}
+  <button class="btn btn-xs" type="button" title="Сбросить фильтры" onclick="todoResetFilter()">Сбросить</button>
+  <span class="filter-result" id="todoFilterResult" role="status"></span>
+</div>
 
-  <div class="todo-wrap" style="flex-direction:column">
-
-  <!-- БЭКЛОГ (вход для новых) -->
-  <section class="todo-panel" style="flex:1 1 auto;width:100%"
+<div class="todo-wrap todo-layout">
+  <section class="todo-panel todo-backlog" data-todo-container="backlog"
            ondragover="event.preventDefault(); this.classList.add('drag-over')"
            ondragleave="this.classList.remove('drag-over')"
            ondrop="todoDrop(event, 'backlog')">
-    <div class="panel-title">📥 Бэклог · {{ backlog|length }}</div>
+    <div class="todo-section-head">
+      <div>
+        <h3 class="section-title">Бэклог</h3>
+        <span class="helper-text">Разберите задачи и перенесите их в подходящий квадрант.</span>
+      </div>
+      <span class="kb-count" data-todo-count="backlog">{{ backlog|length }}</span>
+    </div>
     <form method="post" action="{{ url_for('todo_add') }}" class="todo-add-row">
-      <input type="text" name="title" id="todoNewTitle" placeholder="Новая задача (попадёт в бэклог)..." autocomplete="off" required style="flex:1">
-      <button class="btn small primary" type="submit">+</button>
+      <input type="text" name="title" id="todoNewTitle" placeholder="Новая задача — клавиша N" autocomplete="off" required>
+      <button class="btn small primary" type="submit">Добавить</button>
     </form>
-    {% if backlog %}
     <div class="todo-list">
       {% for t in backlog %}
       {% set is_over = t.due_date and t.due_date < today_s %}
-      <div class="todo-item {% if is_over %}todo-over{% endif %}" draggable="true" ondragstart="dirTodoDrag(event, {{ t.id }})" ondragend="todoDragEnd(event)"
-           data-title="{{ t.title|lower }}" data-tag="{{ t.tag|lower }}">
+      <article class="todo-item {% if is_over %}todo-over{% endif %}" draggable="true"
+               data-todo-card data-todo-open tabindex="0" role="button"
+               onclick="todoCardClick(event, {{ t.id }}, this)" onkeydown="todoCardKey(event, {{ t.id }}, this)"
+               ondragstart="dirTodoDrag(event, {{ t.id }})" ondragend="todoDragEnd(event)"
+               data-title="{{ t.title|lower }}" data-tag="{{ t.tag|lower }}">
         <span class="todo-title">{{ t.title }}</span>
-        {% if t.due_date %}<span class="todo-due {% if is_over %}over{% endif %}" title="Срок">{{ t.due_date[5:] }}{% if is_over %} ⚠{% endif %}</span>{% endif %}
+        {% if t.due_date %}<span class="todo-due {% if is_over %}over{% endif %}" title="Срок">{{ t.due_date[8:10] }}-{{ t.due_date[5:7] }}{% if is_over %} · просрочено{% endif %}</span>{% endif %}
         {% if t.tag %}<span class="todo-tag">{{ t.tag }}</span>{% endif %}
-        <button class="btn btn-xs" type="button" onclick="openTodo({{ t.id }}, this)" title="Редактировать">✏</button>
-        <div class="todo-actions">
-          <form method="post" action="{{ url_for('todo_up', todo=t.id) }}" style="display:inline;margin:0">
-            <button class="btn btn-xs" type="submit" title="Выше">↑</button>
-          </form>
-          <form method="post" action="{{ url_for('todo_down', todo=t.id) }}" style="display:inline;margin:0">
-            <button class="btn btn-xs" type="submit" title="Ниже">↓</button>
-          </form>
-          <form method="post" action="{{ url_for('todo_delegate', todo=t.id) }}" style="display:inline;margin:0">
-            <button class="btn btn-xs" type="submit" title="Делегировать в канбан">→ канбан</button>
-          </form>
-          <form method="post" action="{{ url_for('todo_delete', todo=t.id) }}" style="display:inline;margin:0">
-            <button class="btn btn-xs danger" type="submit" title="Удалить">✕</button>
-          </form>
-        </div>
-      </div>
+        <details class="action-menu todo-menu" onclick="event.stopPropagation()">
+          <summary class="more-btn" aria-label="Действия с задачей {{ t.title }}">•••</summary>
+          <div class="action-menu-panel">
+            <form method="post" action="{{ url_for('todo_up', todo=t.id) }}"><button class="action-menu-item" type="submit">Поднять выше</button></form>
+            <form method="post" action="{{ url_for('todo_down', todo=t.id) }}"><button class="action-menu-item" type="submit">Опустить ниже</button></form>
+            <form method="post" action="{{ url_for('todo_delegate', todo=t.id) }}"><button class="action-menu-item" type="submit">Делегировать в канбан</button></form>
+            <form method="post" action="{{ url_for('todo_delete', todo=t.id) }}"><button class="action-menu-item danger" type="submit">Удалить</button></form>
+          </div>
+        </details>
+      </article>
+      {% else %}
+      <div class="empty-state"><strong>Бэклог пуст</strong><span>Добавьте новую задачу или верните задачу из архива.</span></div>
       {% endfor %}
     </div>
-    {% else %}
-    <div class="empty">Бэклог пуст. Добавьте задачи выше — они попадут в матрицу по мере приоритизации.</div>
-    {% endif %}
   </section>
 
-
-
-      <!-- МАТРИЦА 2×2: важно × срочно -->
-      <div class="eisen-row">
-      {% for q in quadrants %}
-      {% set tasks = quad_tasks.get(q.key, []) %}
-      <div class="eisen-quad {{ q.cls }}"
-           data-status="{{ q.key }}"
-           ondragover="event.preventDefault(); this.classList.add('drag-over')"
-           ondragleave="this.classList.remove('drag-over')"
-           ondrop="todoDrop(event, '{{ q.key }}')">
-        <div class="eisen-qhead"><span class="eisen-qicon">{{ q.icon }}</span> {{ q.title }} <span class="eisen-qaction">{{ q.action }}</span> <span class="kb-count">{{ tasks|length }}</span></div>
-        {% if tasks %}
-        <div class="todo-list">
-          {% for t in tasks %}
-          {% set is_over = t.due_date and t.due_date < today_s %}
-          <div class="todo-item {% if is_over %}todo-over{% endif %}" draggable="true" ondragstart="dirTodoDrag(event, {{ t.id }})" ondragend="todoDragEnd(event)"
-               data-title="{{ t.title|lower }}" data-tag="{{ t.tag|lower }}">
-            <span class="todo-title">{{ t.title }}</span>
-            {% if t.due_date %}<span class="todo-due {% if is_over %}over{% endif %}" title="Срок">{{ t.due_date[5:] }}{% if is_over %} ⚠{% endif %}</span>{% endif %}
-            {% if t.tag %}<span class="todo-tag">{{ t.tag }}</span>{% endif %}
-            <button class="btn btn-xs" type="button" onclick="openTodo({{ t.id }}, this)" title="Редактировать">✏</button>
-            <div class="todo-actions">
-              <form method="post" action="{{ url_for('todo_done', todo=t.id) }}" style="display:inline;margin:0">
-                <button class="btn btn-xs primary" type="submit" title="Сделано">✓</button>
-              </form>
-              <form method="post" action="{{ url_for('todo_delegate', todo=t.id) }}" style="display:inline;margin:0">
-                <button class="btn btn-xs" type="submit" title="Делегировать в канбан">→ канбан</button>
-              </form>
-              <form method="post" action="{{ url_for('todo_delete', todo=t.id) }}" style="display:inline;margin:0">
-                <button class="btn btn-xs danger" type="submit" title="Удалить">✕</button>
-              </form>
-            </div>
-          </div>
-          {% endfor %}
-        </div>
-        {% else %}
-        <div class="kb-empty">—</div>
-        {% endif %}
+  <div class="eisen-row">
+    {% for q in quadrants %}
+    {% set tasks = quad_tasks.get(q.key, []) %}
+    <section class="eisen-quad {{ q.cls }}" data-status="{{ q.key }}" data-todo-container="{{ q.key }}"
+             ondragover="event.preventDefault(); this.classList.add('drag-over')"
+             ondragleave="this.classList.remove('drag-over')"
+             ondrop="todoDrop(event, '{{ q.key }}')">
+      <div class="eisen-qhead">
+        <span class="eisen-qicon">{{ q.icon }}</span>
+        <span>{{ q.title }}</span>
+        <span class="eisen-qaction">{{ q.action }}</span>
+        <span class="kb-count" data-todo-count="{{ q.key }}">{{ tasks|length }}</span>
       </div>
+      <div class="todo-list">
+        {% for t in tasks %}
+        {% set is_over = t.due_date and t.due_date < today_s %}
+        <article class="todo-item {% if is_over %}todo-over{% endif %}" draggable="true"
+                 data-todo-card data-todo-open tabindex="0" role="button"
+                 onclick="todoCardClick(event, {{ t.id }}, this)" onkeydown="todoCardKey(event, {{ t.id }}, this)"
+                 ondragstart="dirTodoDrag(event, {{ t.id }})" ondragend="todoDragEnd(event)"
+                 data-title="{{ t.title|lower }}" data-tag="{{ t.tag|lower }}">
+          <span class="todo-title">{{ t.title }}</span>
+          {% if t.due_date %}<span class="todo-due {% if is_over %}over{% endif %}" title="Срок">{{ t.due_date[8:10] }}-{{ t.due_date[5:7] }}{% if is_over %} · просрочено{% endif %}</span>{% endif %}
+          {% if t.tag %}<span class="todo-tag">{{ t.tag }}</span>{% endif %}
+          <form method="post" action="{{ url_for('todo_done', todo=t.id) }}" class="todo-primary-action" onclick="event.stopPropagation()">
+            <button class="btn btn-xs primary" type="submit">✓ Выполнить</button>
+          </form>
+          <details class="action-menu todo-menu" onclick="event.stopPropagation()">
+            <summary class="more-btn" aria-label="Действия с задачей {{ t.title }}">•••</summary>
+            <div class="action-menu-panel">
+              <button class="action-menu-item" type="button" onclick="openTodo({{ t.id }}, this)">Редактировать</button>
+              <form method="post" action="{{ url_for('todo_delegate', todo=t.id) }}"><button class="action-menu-item" type="submit">Делегировать в канбан</button></form>
+              <form method="post" action="{{ url_for('todo_delete', todo=t.id) }}"><button class="action-menu-item danger" type="submit">Удалить</button></form>
+            </div>
+          </details>
+        </article>
+        {% else %}
+        <div class="empty-state todo-empty"><strong>Нет задач</strong><span>Перетащите сюда задачу из бэклога</span></div>
+        {% endfor %}
+      </div>
+    </section>
     {% endfor %}
   </div>
-
 </div>
 
-<!-- модалка редактирования задачи -->
 <div class="modal-overlay" id="todo-modal">
   <div class="modal-card" tabindex="-1">
     <div class="modal-head">
@@ -124,45 +121,38 @@
 </div>
 
 <script>
-/* Drag & drop задач между бэклогом и квадрантами матрицы */
 let todoDraggingId = null;
+let todoDragStarted = false;
 function dirTodoDrag(ev, id) {
-  todoDraggingId = id;
-  ev.dataTransfer.effectAllowed = 'move';
-  ev.dataTransfer.setData('text/plain', String(id));
-  /* явный вид перетаскиваемой карточки: исходник «уходит» + призрак-карточка */
-  var card = ev.currentTarget.closest('.todo-item');
-  if (card) card.classList.add('todo-dragging');
-  var titleEl = card ? card.querySelector('.todo-title') : null;
-  var ghost = document.createElement('div');
-  ghost.className = 'todo-drag-ghost';
-  ghost.textContent = titleEl ? titleEl.textContent.trim() : '';
-  document.body.appendChild(ghost);
-  ev.dataTransfer.setDragImage(ghost, 20, 14);
-  ev.dataTransfer.setData('text/plain', String(id));
+  todoDraggingId = id; todoDragStarted = true;
+  ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setData('text/plain', String(id));
+  var card = ev.currentTarget.closest('.todo-item'); if (card) card.classList.add('todo-dragging');
+  var ghost = document.createElement('div'); ghost.className = 'todo-drag-ghost';
+  ghost.textContent = card ? card.querySelector('.todo-title').textContent.trim() : '';
+  document.body.appendChild(ghost); ev.dataTransfer.setDragImage(ghost, 20, 14);
 }
 function todoDragEnd(ev) {
-  var card = ev.currentTarget.closest('.todo-item');
-  if (card) card.classList.remove('todo-dragging');
-  todoDraggingId = null;
-  document.querySelectorAll('.todo-drag-ghost').forEach(function (g) { g.remove(); });
+  var card = ev.currentTarget.closest('.todo-item'); if (card) card.classList.remove('todo-dragging');
+  todoDraggingId = null; document.querySelectorAll('.todo-drag-ghost').forEach(function (g) { g.remove(); });
+  setTimeout(function () { todoDragStarted = false; }, 0);
 }
 function todoDrop(ev, status) {
-  ev.preventDefault();
-  ev.currentTarget.classList.remove('drag-over');
+  ev.preventDefault(); ev.currentTarget.classList.remove('drag-over');
   if (todoDraggingId === null) return;
-  var id = todoDraggingId;
-  var fd = new FormData();
-  fd.append('status', status);
-  window.postForm({
-    url: '/todo/' + id + '/move', body: fd, method: 'POST', checkOk: true,
-    errText: 'Не удалось переместить задачу.',
-    onSuccess: function () { location.reload(); }
-  });
+  var id = todoDraggingId; var fd = new FormData(); fd.append('status', status);
+  window.postForm({ url: '/todo/' + id + '/move', body: fd, method: 'POST', checkOk: true,
+    errText: 'Не удалось переместить задачу.', onSuccess: function () { location.reload(); } });
   todoDraggingId = null;
 }
-
-/* Модалка редактирования (доступный диалог: фокус-ловушка, dirty-state, возврат фокуса) */
+function todoCardClick(event, id, trigger) {
+  if (todoDragStarted || event.target.closest('button, a, form, details, summary, input, select')) return;
+  openTodo(id, trigger);
+}
+function todoCardKey(event, id, trigger) {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  if (event.target.closest('button, a, form, details, summary, input, select')) return;
+  event.preventDefault(); openTodo(id, trigger);
+}
 var todoModal = window.initModal({
   overlay: document.getElementById('todo-modal'),
   getBody: function () { return document.getElementById('todo-modal-body'); },
@@ -174,45 +164,43 @@ function openTodo(id, trigger) {
   var returnFocus = trigger || document.activeElement;
   fetch('/todo/' + encodeURIComponent(id) + '/card')
     .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
-    .then(function (html) {
-      document.getElementById('todo-modal-body').innerHTML = html;
-      window.todoModal && todoModal.setDirty(false);
-      todoModal.open(returnFocus);
-    })
+    .then(function (html) { document.getElementById('todo-modal-body').innerHTML = html; todoModal.setDirty(false); todoModal.open(returnFocus); })
     .catch(function () { alert('Не удалось открыть задачу'); });
 }
 function closeTodo() { if (todoModal) todoModal.close(); }
-document.getElementById('todo-modal-close').addEventListener('click', function (e) { e.stopPropagation(); if (todoModal) todoModal.close(); });
-
-
-/* Поиск по названию + фильтр по тегу (бэклог и квадранты) */
-function todoApplyFilter() {
-  var q = (document.getElementById('todoSearch') ? document.getElementById('todoSearch').value : '').trim().toLowerCase();
-  var tag = (document.getElementById('todoTagFilter') ? document.getElementById('todoTagFilter').value : '').trim().toLowerCase();
-  document.querySelectorAll('.todo-item').forEach(function (card) {
-    var ok = true;
-    if (q) { var hay = (card.dataset.title || '') + ' ' + (card.dataset.tag || ''); if (hay.indexOf(q) === -1) ok = false; }
-    if (ok && tag && (card.dataset.tag || '') !== tag) ok = false;
-    card.style.display = ok ? '' : 'none';
-  });
-  document.querySelectorAll('.eisen-quad').forEach(function (quad) {
-    var visible = 0;
-    quad.querySelectorAll('.todo-item').forEach(function (c) { if (c.style.display !== 'none') visible++; });
-    var cnt = quad.querySelector('.kb-count'); if (cnt) cnt.textContent = visible;
-  });
+document.getElementById('todo-modal-close').addEventListener('click', function (e) { e.stopPropagation(); todoModal.close(); });
+function todoResetFilter() {
+  document.getElementById('todoSearch').value = '';
+  var tag = document.getElementById('todoTagFilter'); if (tag) tag.value = '';
+  todoApplyFilter(); document.getElementById('todoSearch').focus();
 }
-
+function todoApplyFilter() {
+  var q = document.getElementById('todoSearch').value.trim().toLowerCase();
+  var tagNode = document.getElementById('todoTagFilter');
+  var tag = tagNode ? tagNode.value.trim().toLowerCase() : '';
+  var visibleTotal = 0; var total = 0;
+  document.querySelectorAll('[data-todo-card]').forEach(function (card) {
+    total++;
+    var hay = (card.dataset.title || '') + ' ' + (card.dataset.tag || '');
+    var visible = (!q || hay.indexOf(q) !== -1) && (!tag || (card.dataset.tag || '') === tag);
+    card.hidden = !visible; if (visible) visibleTotal++;
+  });
+  document.querySelectorAll('[data-todo-container]').forEach(function (container) {
+    var visible = Array.from(container.querySelectorAll('[data-todo-card]')).filter(function (card) { return !card.hidden; }).length;
+    var count = container.querySelector('[data-todo-count]'); if (count) count.textContent = visible;
+  });
+  var result = document.getElementById('todoFilterResult');
+  result.textContent = (q || tag) ? ('Показано ' + visibleTotal + ' из ' + total) : (total + ' задач');
+}
+todoApplyFilter();
 document.addEventListener('keydown', function (e) {
-  /* Пакет 2: хоткеи не перехватывают ввод в полях/composition/модификаторах;
-     "/" внутри поля вводится обычным символом. */
   if (window.hotkeyGuard(e)) return;
-  /* / — фокус на добавление новой задачи (только вне полей) */
   if (e.key === '/' && !window.isEditableTarget(document.activeElement)) {
-    var inp = document.getElementById('todoNewTitle');
-    if (inp) { e.preventDefault(); inp.focus(); }
+    e.preventDefault(); document.getElementById('todoSearch').focus();
   }
-  /* Esc закрывает модалку (проверку dirty и возврат фокуса делает initModal) */
+  if ((e.key === 'n' || e.key === 'N') && !window.isEditableTarget(document.activeElement)) {
+    e.preventDefault(); document.getElementById('todoNewTitle').focus();
+  }
 });
 </script>
-
 {% endblock %}

@@ -765,6 +765,31 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
 .todo-filterbar select { max-width: 160px; }
 .todo-filterbar .btn { flex-shrink: 0; }
 .todo-actions { display: flex; gap: 4px; flex-shrink: 0; flex-wrap: wrap; }
+.todo-page-header { margin-bottom: var(--space-3); }
+.todo-page-header .helper-text { margin: 4px 0 0; }
+.todo-filter-bar { max-width: 720px; margin-bottom: var(--space-4); }
+.todo-filter-bar input { flex: 1 1 240px; min-width: 140px; }
+.todo-filter-bar select { max-width: 170px; }
+.filter-result { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.todo-layout { flex-direction: column; }
+.todo-backlog { flex: 1 1 auto; width: 100%; border-top: 3px solid var(--accent); }
+.todo-section-head { display: flex; align-items: flex-start; gap: var(--space-3); margin-bottom: var(--space-3); }
+.todo-section-head > div { flex: 1; }
+.todo-section-head .section-title { margin-bottom: 2px; }
+.todo-add-row input { flex: 1; min-width: 140px; }
+.todo-item { position: relative; }
+.todo-item[hidden] { display: none; }
+.todo-primary-action { margin: 0; }
+.todo-menu { flex: 0 0 auto; }
+.todo-menu > summary { list-style: none; }
+.todo-menu > summary::-webkit-details-marker { display: none; }
+.todo-menu[open] > .action-menu-panel { display: block; }
+.todo-menu .action-menu-panel { right: 0; left: auto; }
+.todo-menu form { margin: 0; }
+.todo-empty { min-height: 90px; padding: var(--space-3); }
+.todo-empty strong, .todo-empty span { display: block; }
+.todo-empty span { margin-top: 4px; color: var(--muted); font-size: 12px; }
+.todo-item:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 
 /* --- матрица Эйзенхауэра в личном todo (2×2, важно × срочно) --- */
 .eisen-row {
