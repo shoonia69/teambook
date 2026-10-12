@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}Сотрудники · TeamBook{% endblock %}
 {% block content %}
 
@@ -71,7 +72,7 @@
       <option value="xlsx">Excel</option>
       <option value="pdf">PDF</option>
     </select>
-    <button class="btn small primary" type="submit">⬇ Отчёт</button>
+    <button class="btn small primary" type="submit">{{ icon('download') }} Отчёт</button>
   </form>
 </div>
 

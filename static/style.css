@@ -862,6 +862,10 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
 @media (max-width: 560px) { .settings-section { padding: var(--space-4); } .settings-section-head, .password-field { flex-wrap: wrap; } .password-field .btn { width: 100%; min-height: 44px; } }
 
 /* ---------- optional responsive hardening ---------- */
+.ui-icon { width: 1em; height: 1em; display: inline-block; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; vertical-align: -.125em; }
+.icon-btn { display: inline-flex; align-items: center; justify-content: center; }
+.icon-btn .ui-icon { width: 18px; height: 18px; }
+
 .kb-col-name, .kb-card-title, .todo-title, .body-text, .employee-facts strong, .notif-txt {
   min-width: 0;
   overflow-wrap: anywhere;

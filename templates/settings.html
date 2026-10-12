@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}Настройки · TeamBook{% endblock %}
 {% block content %}
 
@@ -23,7 +24,7 @@
   <section class="settings-section" data-settings-section="backup">
     <div class="settings-section-head"><div><h3 class="section-title">Резервная копия</h3><p class="helper-text">Скачайте полную копию базы и храните её отдельно от сервера.</p></div></div>
     <div class="backup-meta"><span>Размер базы</span><strong>{{ "%.2f"|format(db_size / 1024) }} КБ</strong></div>
-    <div class="btn-row"><a class="btn primary" href="{{ url_for('backup_export') }}">Скачать копию БД</a></div>
+    <div class="btn-row"><a class="btn primary" href="{{ url_for('backup_export') }}">{{ icon('download') }} Скачать копию БД</a></div>
   </section>
 
   <section class="settings-section danger-zone">
@@ -32,7 +33,7 @@
     <form method="post" action="{{ url_for('backup_import') }}" enctype="multipart/form-data" onsubmit="return confirm('Восстановить базу из выбранного файла? Текущие данные будут заменены, а текущая БД сохранится как резерв.')">
       <label class="form-row-label" for="restoreFile">Файл резервной копии</label>
       <div class="restore-file-row"><input id="restoreFile" type="file" name="dbfile" accept=".db,.sqlite,.sqlite3" required><span id="restoreFileName" class="helper-text" role="status">Файл не выбран</span></div>
-      <div class="btn-row"><button class="btn danger" type="submit">Восстановить базу</button></div>
+      <div class="btn-row"><button class="btn danger" type="submit">{{ icon('upload') }} Восстановить базу</button></div>
     </form>
   </section>
 </div>

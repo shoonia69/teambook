@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}Доска задач · TeamBook{% endblock %}
 {% block content %}
 
@@ -53,7 +54,7 @@
                ondrop="dropOn(event, {{ col.id }})">
             <div class="kb-col-head">
               <button class="kb-grip" type="button" draggable="true" data-cid="{{ col.id }}" ondragstart="dragCol(event)" ondragend="dragEnd(event)"
-                      title="Перетащите колонку или используйте стрелки" aria-label="Изменить порядок колонки {{ col.name }}" onkeydown="kbColumnOrderKey(event)">⠿</button>
+                      title="Перетащите колонку или используйте стрелки" aria-label="Изменить порядок колонки {{ col.name }}" onkeydown="kbColumnOrderKey(event)">{{ icon('drag') }}</button>
               <span class="kb-col-name">{{ col.name }}</span>
               <span class="kb-count">{{ tasks|length }}</span>
               {% if not col.locked %}
@@ -182,7 +183,7 @@
 
   <div class="kb-zones">
     <div class="kb-zone" data-zone="archive" ondragover="event.preventDefault(); this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="dropZone(event, 'archive')">
-      <span class="kb-zone-ico">🗄</span><span class="kb-zone-label">Архив · {{ archive_cnt }}</span><a class="btn btn-xs" href="{{ url_for('board_archive') }}">открыть</a>
+      <span class="kb-zone-ico">{{ icon('archive') }}</span><span class="kb-zone-label">Архив · {{ archive_cnt }}</span><a class="btn btn-xs" href="{{ url_for('board_archive') }}">открыть</a>
     </div>
     <div class="kb-zone danger-zone" data-zone="trash" ondragover="event.preventDefault(); this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="dropZone(event, 'trash')">
       <span class="kb-zone-ico">🗑</span><span class="kb-zone-label">Корзина · {{ trash_cnt }}</span><a class="btn btn-xs" href="{{ url_for('board_trash') }}">открыть</a>
@@ -192,7 +193,7 @@
 
 <div class="modal-overlay" id="card-modal">
   <div class="modal-card" tabindex="-1">
-    <div class="modal-head"><span class="modal-title" id="card-modal-title"></span><button class="modal-x" id="card-modal-close" title="Закрыть" aria-label="Закрыть">✕</button></div>
+    <div class="modal-head"><span class="modal-title" id="card-modal-title"></span><button class="modal-x" id="card-modal-close" title="Закрыть" aria-label="Закрыть">{{ icon('close') }}</button></div>
     <div class="modal-body" id="card-modal-body"></div>
   </div>
 </div>

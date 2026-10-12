@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}Мои задачи · TeamBook{% endblock %}
 {% block content %}
 
@@ -90,7 +91,7 @@
           {% if t.due_date %}<span class="todo-due {% if is_over %}over{% endif %}" title="Срок">{{ t.due_date[8:10] }}-{{ t.due_date[5:7] }}{% if is_over %} · просрочено{% endif %}</span>{% endif %}
           {% if t.tag %}<span class="todo-tag">{{ t.tag }}</span>{% endif %}
           <form method="post" action="{{ url_for('todo_done', todo=t.id) }}" class="todo-primary-action" onclick="event.stopPropagation()">
-            <button class="btn btn-xs primary" type="submit">✓ Выполнить</button>
+            <button class="btn btn-xs primary" type="submit">{{ icon('check') }} Выполнить</button>
           </form>
           <details class="action-menu todo-menu" onclick="event.stopPropagation()">
             <summary class="more-btn" aria-label="Действия с задачей {{ t.title }}">•••</summary>
@@ -114,7 +115,7 @@
   <div class="modal-card" tabindex="-1">
     <div class="modal-head">
       <span class="modal-title" id="todo-modal-title">Редактировать задачу</span>
-      <button class="modal-x" id="todo-modal-close" title="Закрыть" aria-label="Закрыть">✕</button>
+      <button class="modal-x" id="todo-modal-close" title="Закрыть" aria-label="Закрыть">{{ icon('close') }}</button>
     </div>
     <div class="modal-body" id="todo-modal-body"></div>
   </div>
