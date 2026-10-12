@@ -2,65 +2,47 @@
 {% block title %}Настройки · TeamBook{% endblock %}
 {% block content %}
 
-<div class="page-head">
-  <h2>Настройки</h2>
-  <div class="spacer"></div>
+<header class="page-header settings-page-header">
+  <div><h2 class="page-title">Настройки</h2><p class="helper-text">Интеграции, резервные копии и обслуживание TeamBook.</p></div>
+</header>
+
+<div class="settings-layout">
+  <section class="settings-section" data-settings-section="integrations">
+    <div class="settings-section-head"><div><h3 class="section-title">Интеграции</h3><p class="helper-text">Telegram-бот для работы с сотрудниками, задачами и проблемами.</p></div><span class="status-chip {% if tg_enabled %}enabled{% endif %}">{{ 'Включён в настройках' if tg_enabled else 'Отключён' }}</span></div>
+    <form method="post" action="{{ url_for('settings_bot_save') }}" class="settings-form">
+      <label class="form-row-label" for="tg_token">Токен Telegram-бота</label>
+      <div class="password-field"><input type="password" id="tg_token" name="tg_token" value="{{ tg_token }}" placeholder="123456789:AAxxxx..." autocomplete="off" spellcheck="false"><button class="btn small" id="tgTokenToggle" type="button" aria-pressed="false" aria-controls="tg_token">Показать</button></div>
+      <p class="helper-text">Получите токен у @BotFather. Он сохраняется в настройках приложения.</p>
+      <label class="form-row-label" for="tg_admin">ID администратора</label><input type="text" id="tg_admin" name="tg_admin" value="{{ tg_admin }}" placeholder="123456789" inputmode="numeric" autocomplete="off">
+      <label class="form-row-label" for="tg_enabled">Конфигурационный статус</label><select id="tg_enabled" name="tg_enabled"><option value="1" {% if tg_enabled %}selected{% endif %}>Включён в настройках</option><option value="0" {% if not tg_enabled %}selected{% endif %}>Отключён</option></select>
+      <div class="btn-row"><button class="btn primary" type="submit">Сохранить настройки</button></div>
+    </form>
+    <p class="helper-text">Команды: <code>/start</code> — главное меню, <code>/help</code> — помощь.</p>
+  </section>
+
+  <section class="settings-section" data-settings-section="backup">
+    <div class="settings-section-head"><div><h3 class="section-title">Резервная копия</h3><p class="helper-text">Скачайте полную копию базы и храните её отдельно от сервера.</p></div></div>
+    <div class="backup-meta"><span>Размер базы</span><strong>{{ "%.2f"|format(db_size / 1024) }} КБ</strong></div>
+    <div class="btn-row"><a class="btn primary" href="{{ url_for('backup_export') }}">Скачать копию БД</a></div>
+  </section>
+
+  <section class="settings-section danger-zone">
+    <div class="settings-section-head"><div><h3 class="section-title">Опасные действия</h3><p class="helper-text">Восстановление полностью заменит текущую базу выбранной копией.</p></div></div>
+    <p class="body-text">Создадим резервную копию текущей базы перед заменой и сохраним её рядом с рабочим файлом.</p>
+    <form method="post" action="{{ url_for('backup_import') }}" enctype="multipart/form-data" onsubmit="return confirm('Восстановить базу из выбранного файла? Текущие данные будут заменены, а текущая БД сохранится как резерв.')">
+      <label class="form-row-label" for="restoreFile">Файл резервной копии</label>
+      <div class="restore-file-row"><input id="restoreFile" type="file" name="dbfile" accept=".db,.sqlite,.sqlite3" required><span id="restoreFileName" class="helper-text" role="status">Файл не выбран</span></div>
+      <div class="btn-row"><button class="btn danger" type="submit">Восстановить базу</button></div>
+    </form>
+  </section>
 </div>
 
-<div class="card" style="max-width:760px">
-  <div class="panel-title">📱 Telegram-бот</div>
-  <p style="margin-top:0;color:var(--muted)">
-    Бот дублирует функции сайта (сотрудники, записи, проблемы, канбан-доска) прямо в Telegram.
-    Заполните данные ниже и сохраните — бот запустится автоматически в течение нескольких секунд.
-  </p>
-  <form method="post" action="{{ url_for('settings_bot_save') }}">
-    <label class="form-row-label" for="tg_token">Токен бота (получить у @BotFather)</label>
-    <input type="text" id="tg_token" name="tg_token" value="{{ tg_token }}"
-           placeholder="123456789:AAxxxx..." autocomplete="off" spellcheck="false" style="width:100%">
-    <label class="form-row-label" for="tg_admin">ID администратора (число)</label>
-    <input type="text" id="tg_admin" name="tg_admin" value="{{ tg_admin }}"
-           placeholder="123456789" autocomplete="off" spellcheck="false" style="width:100%">
-    <label class="form-row-label" for="tg_enabled">Включить бота</label>
-    <select id="tg_enabled" name="tg_enabled" style="width:100%">
-      <option value="1" {% if tg_enabled %}selected{% endif %}>Включён</option>
-      <option value="0" {% if not tg_enabled %}selected{% endif %}>Отключён</option>
-    </select>
-    <div class="btn-row" style="margin-top:14px">
-      <button class="btn primary" type="submit">💾 Сохранить и запустить</button>
-    </div>
-  </form>
-  <div class="sub" style="margin-top:10px">
-    Команды бота: <code>/start</code> — главное меню, <code>/help</code> — помощь.
-  </div>
-</div>
-
-<div class="card" style="max-width:760px">
-  <div class="panel-title">💾 Резервная копия</div>
-  <p style="margin-top:0;color:var(--muted)">
-    Скачайте полную копию базы данных одним файлом. Храните её в надёжном месте
-    — с её помощью можно восстановить систему в случае аварии.
-  </p>
-  <div class="btn-row">
-    <a class="btn primary" href="{{ url_for('backup_export') }}">⬇ Скачать копию БД</a>
-  </div>
-  <div class="sub" style="margin-top:8px">
-    Размер базы: {{ "%.2f"|format(db_size / 1024) }} КБ
-  </div>
-</div>
-
-<div class="card" style="max-width:760px">
-  <div class="panel-title">⬆ Импорт (восстановить из файла)</div>
-  <p style="margin-top:0;color:var(--muted)">
-    Загрузите ранее скачанный файл <code>teambook_backup_*.db</code>. Текущая
-    база будет автоматически сохранена рядом как резерв перед заменой.
-  </p>
-  <form method="post" action="{{ url_for('backup_import') }}" enctype="multipart/form-data"
-        onsubmit="return confirm('Восстановить базу из выбранного файла? Текущие данные будут заменены (текущая БД сохранится рядом как резерв).')">
-    <div class="filter-row">
-      <input type="file" name="dbfile" accept=".db,.sqlite,.sqlite3" required style="max-width:420px">
-      <button class="btn primary" type="submit">⬆ Восстановить из файла</button>
-    </div>
-  </form>
-</div>
-
+<script>
+(function () {
+  var token = document.getElementById('tg_token'); var button = document.getElementById('tgTokenToggle');
+  button.addEventListener('click', function () { var reveal = token.type === 'password'; token.type = reveal ? 'text' : 'password'; button.setAttribute('aria-pressed', reveal ? 'true' : 'false'); button.textContent = reveal ? 'Скрыть' : 'Показать'; token.focus(); });
+  var file = document.getElementById('restoreFile'); var fileName = document.getElementById('restoreFileName');
+  file.addEventListener('change', function () { fileName.textContent = file.files.length ? file.files[0].name : 'Файл не выбран'; });
+})();
+</script>
 {% endblock %}

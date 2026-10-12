@@ -836,3 +836,24 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
 .employee-overview-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
 .employee-tab-panel[hidden], details.accordion[hidden] { display: none; }
 @media (max-width: 700px) { .employee-summary-head { flex-wrap: wrap; } .employee-summary-actions { width: 100%; } .employee-facts, .employee-overview-grid { grid-template-columns: 1fr; } }
+
+/* ---------- настройки ---------- */
+.settings-page-header { max-width: 820px; }
+.settings-layout { display: grid; gap: var(--space-4); max-width: 820px; }
+.settings-section { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-5); box-shadow: var(--shadow-sm); }
+.settings-section-head { display: flex; align-items: flex-start; gap: var(--space-3); margin-bottom: var(--space-4); }
+.settings-section-head > div { flex: 1; }
+.settings-section-head .section-title, .settings-section-head .helper-text { margin: 0; }
+.settings-section-head .helper-text { margin-top: 4px; }
+.settings-form { display: grid; gap: var(--space-2); }
+.settings-form input, .settings-form select { width: 100%; }
+.password-field { display: flex; align-items: center; gap: var(--space-2); }
+.password-field input { flex: 1; min-width: 0; }
+.status-chip { padding: 4px 8px; border-radius: 999px; color: var(--muted); background: var(--panel2); font-size: 12px; white-space: nowrap; }
+.status-chip.enabled { color: var(--accent2); }
+.backup-meta { display: flex; gap: var(--space-2); margin-bottom: var(--space-3); }
+.backup-meta span { color: var(--muted); }
+.danger-zone { border-color: color-mix(in srgb, var(--danger) 55%, var(--border)); }
+.danger-zone .section-title { color: var(--danger); }
+.restore-file-row { display: grid; gap: var(--space-2); margin-bottom: var(--space-3); }
+@media (max-width: 560px) { .settings-section { padding: var(--space-4); } .settings-section-head, .password-field { flex-wrap: wrap; } .password-field .btn { width: 100%; min-height: 44px; } }
