@@ -785,6 +785,9 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
 .todo-menu > summary::-webkit-details-marker { display: none; }
 .todo-menu[open] > .action-menu-panel { display: block; }
 .todo-menu .action-menu-panel { right: 0; left: auto; }
+.todo-item:has(.todo-menu[open]) { z-index: 80; overflow: visible; }
+.todo-menu[open] { z-index: 80; }
+.todo-menu[open] .action-menu-panel { z-index: 81; }
 .todo-menu form { margin: 0; }
 .todo-empty { min-height: 90px; padding: var(--space-3); }
 .todo-empty strong, .todo-empty span { display: block; }

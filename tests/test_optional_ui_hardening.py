@@ -41,3 +41,12 @@ def test_employee_notes_are_owned_by_development_panel(app_env, client):
     development_end = html.index('data-employee-panel="problems"')
     notes = html.index('data-acc="notes"')
     assert development_start < notes < development_end
+
+
+def test_todo_menus_render_above_cards():
+    css = (ROOT / "static" / "style.css").read_text(encoding="utf-8")
+
+    assert ".todo-item:has(.todo-menu[open])" in css
+    assert "overflow: visible" in css
+    assert ".todo-menu[open]" in css
+    assert "z-index: 80" in css
