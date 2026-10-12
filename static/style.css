@@ -220,6 +220,23 @@ a.stat-card.warn .stat-num { color: var(--danger); }
 }
 .filter-bar > .grow { flex: 1 1 180px; min-width: 120px; }
 .filter-bar-result { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.search-input-wrap {
+  display: flex; align-items: center; gap: var(--space-2); min-height: 38px;
+  padding: 0 var(--space-3); color: var(--muted); background: var(--panel2);
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  transition: border-color .16s ease, box-shadow .16s ease;
+}
+.search-input-wrap:focus-within { border-color: var(--accent); box-shadow: var(--focus-ring); }
+.search-input-wrap input {
+  flex: 1; min-width: 0; padding: 0; border: 0; border-radius: 0;
+  background: transparent; color: var(--text); box-shadow: none;
+}
+.search-input-wrap input:focus { outline: 0; box-shadow: none; }
+.search-input-wrap kbd {
+  min-width: 20px; padding: 1px 6px; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--muted); background: var(--panel);
+  font: inherit; font-size: 11px; line-height: 18px; text-align: center;
+}
 .filter-toggle { display: inline-flex; align-items: center; gap: var(--space-1); white-space: nowrap; }
 
 .action-menu { position: relative; }
@@ -760,17 +777,12 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
 .todo-due.over { color: var(--danger); background: rgba(255,107,107,.12); font-weight: 600; }
 .todo-tag { font-size: 11px; color: var(--accent2); background: rgba(56,217,169,.12); padding: 1px 6px; border-radius: 6px; white-space: nowrap; }
 .todo-over { border-color: var(--danger) !important; }
-.todo-filterbar { display: flex; gap: 8px; align-items: center; margin: 2px 0 12px; max-width: 520px; }
-.todo-filterbar input { flex: 1; min-width: 120px; }
-.todo-filterbar select { max-width: 160px; }
-.todo-filterbar .btn { flex-shrink: 0; }
 .todo-actions { display: flex; gap: 4px; flex-shrink: 0; flex-wrap: wrap; }
 .todo-page-header { margin-bottom: var(--space-3); }
 .todo-page-header .helper-text { margin: 4px 0 0; }
-.todo-filter-bar { max-width: 720px; margin-bottom: var(--space-4); }
-.todo-filter-bar input { flex: 1 1 240px; min-width: 140px; }
+.todo-filter-bar { max-width: 620px; margin-bottom: var(--space-4); }
+.todo-filter-bar .search-input-wrap { flex: 1 1 280px; min-width: 180px; }
 .todo-filter-bar select { max-width: 170px; }
-.filter-result { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .todo-layout { flex-direction: column; }
 .todo-backlog { flex: 1 1 auto; width: 100%; border-top: 3px solid var(--accent); }
 .todo-section-head { display: flex; align-items: flex-start; gap: var(--space-3); margin-bottom: var(--space-3); }

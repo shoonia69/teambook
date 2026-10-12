@@ -12,15 +12,20 @@
 </header>
 
 <div class="filter-bar todo-filter-bar">
-  <input type="search" id="todoSearch" placeholder="Поиск задач — клавиша /" aria-label="Поиск задач" oninput="todoApplyFilter()">
+  <label class="grow search-input-wrap" for="todoSearch">
+    {{ icon('search') }}
+    <span class="visually-hidden">Поиск задач</span>
+    <input type="search" id="todoSearch" placeholder="Поиск по задачам..." oninput="todoApplyFilter()">
+    <kbd aria-hidden="true">/</kbd>
+  </label>
   {% if all_tags %}
   <select id="todoTagFilter" aria-label="Фильтр по тегу" onchange="todoApplyFilter()">
     <option value="">Все теги</option>
     {% for tg in all_tags %}<option value="{{ tg }}">{{ tg }}</option>{% endfor %}
   </select>
   {% endif %}
-  <button class="btn btn-xs" type="button" title="Сбросить фильтры" onclick="todoResetFilter()">Сбросить</button>
-  <span class="filter-result" id="todoFilterResult" role="status"></span>
+  <button class="btn small" type="button" title="Сбросить фильтры" onclick="todoResetFilter()">Сбросить</button>
+  <span class="filter-bar-result" id="todoFilterResult" role="status" aria-live="polite"></span>
 </div>
 
 <div class="todo-wrap todo-layout">

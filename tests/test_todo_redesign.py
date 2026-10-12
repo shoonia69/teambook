@@ -10,7 +10,8 @@ def test_todo_uses_compact_cards_menus_and_consistent_hotkeys(app_env, client):
 
     assert 'class="page-header todo-page-header"' in html
     assert 'class="filter-bar todo-filter-bar"' in html
-    assert 'placeholder="Поиск задач — клавиша /"' in html
+    assert 'placeholder="Поиск по задачам..."' in html
+    assert 'class="grow search-input-wrap"' in html
     assert 'id="todoFilterResult"' in html
     assert 'data-todo-count="backlog"' in html
     assert 'data-todo-card' in html

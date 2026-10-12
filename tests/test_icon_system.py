@@ -32,3 +32,14 @@ def test_primary_templates_use_local_icons_instead_of_action_emoji():
     assert "💾" not in catalogs and "✕" not in catalogs
     assert 'aria-label="Переименовать' in catalogs
     assert 'aria-label="Удалить' in catalogs
+
+
+def test_todo_search_uses_shared_filter_bar_components():
+    todo = (ROOT / "templates" / "todo.html").read_text(encoding="utf-8")
+    css = (ROOT / "static" / "style.css").read_text(encoding="utf-8")
+
+    assert 'class="grow search-input-wrap"' in todo
+    assert "{{ icon('search') }}" in todo
+    assert 'class="filter-bar-result"' in todo
+    assert ".search-input-wrap:focus-within" in css
+    assert ".todo-filterbar" not in css
