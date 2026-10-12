@@ -138,26 +138,6 @@
 
 </section>
 
-<section class="employee-notes-section">
-<!-- Случайные заметки о сотруднике -->
-<details class="card accordion" data-acc="notes" open>
-  <summary class="acc-summary"><span class="acc-title">Заметки</span>
-    <span class="acc-toggle">свернуть/развернуть</span>
-  </summary>
-  <div class="acc-body">
-  <form method="post" action="{{ url_for('employee_notes', eid=emp.id) }}">
-    <div class="toolbar" style="margin-bottom:8px">
-      <div class="spacer"></div>
-      <button class="btn small primary" type="submit">Сохранить</button>
-    </div>
-    <textarea name="notes" style="min-height:110px"
-              placeholder="Случайные заметки о сотруднике: черты характера, пожелания по развитию, подвижки, что угодно вне привязки к полугодию.">{{ emp.notes or '' }}</textarea>
-  </form>
-  </div>
-</details>
-
-</section>
-
 <section id="employee-panel-development" class="employee-tab-panel" role="tabpanel" aria-labelledby="employee-tab-development" data-employee-panel="development">
 <!-- Выбор года -->
 <div class="toolbar">
@@ -253,6 +233,27 @@
   </div>
 </details>
 {% endif %}
+
+<section class="employee-notes-section">
+<!-- Случайные заметки о сотруднике -->
+<details class="card accordion" data-acc="notes" open>
+  <summary class="acc-summary"><span class="acc-title">Заметки</span>
+    <span class="acc-toggle">свернуть/развернуть</span>
+  </summary>
+  <div class="acc-body">
+  <form method="post" action="{{ url_for('employee_notes', eid=emp.id) }}">
+    <div class="toolbar" style="margin-bottom:8px">
+      <div class="spacer"></div>
+      <button class="btn small primary" type="submit">Сохранить</button>
+    </div>
+    <textarea name="notes" style="min-height:110px"
+              placeholder="Случайные заметки о сотруднике: черты характера, пожелания по развитию, подвижки, что угодно вне привязки к полугодию.">{{ emp.notes or '' }}</textarea>
+  </form>
+  </div>
+</details>
+
+</section>
+
 
 </section>
 

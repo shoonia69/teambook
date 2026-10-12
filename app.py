@@ -7,37 +7,52 @@ TeamBook — блокнот руководителя.
 """
 
 import os
-import sqlite3
-import secrets
-import time
-import shutil
-import tempfile
 import re
+import secrets
+import shutil
+import sqlite3
+import tempfile
+import time
 from contextlib import contextmanager
-from datetime import datetime, date, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from functools import wraps
 
 from flask import (
-    Flask, request, redirect, url_for, render_template, session, flash, abort, g,
+    Flask,
+    abort,
+    flash,
+    g,
+    redirect,
+    render_template,
+    request,
     send_file,
+    session,
+    url_for,
 )
 
 try:
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
     HAS_EXCEL = True
 except Exception:
     HAS_EXCEL = False
 
 try:
-    from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.platypus import (
+        PageBreak,
+        Paragraph,
+        SimpleDocTemplate,
+        Spacer,
+        Table,
+        TableStyle,
+    )
     HAS_PDF = True
 except Exception:
     HAS_PDF = False
@@ -1940,8 +1955,8 @@ def backup_page():
 @login_required
 def backup_export():
     """Скачать копию БД: делаем консистентную копию через SQLite backup API."""
-    from os import path as _p
     from io import BytesIO
+    from os import path as _p
     _p.exists(DB_PATH) or abort(404)
     # Создаём консистентную копию во временном файле, читаем её в память и сразу
     # удаляем файл — никаких «висячих» temp-файлов/дескрипторов после ответа
@@ -2582,7 +2597,8 @@ def _board_ctx(db, month=None, year=None):
     ).fetchone()["c"]
 
     # --- гант: календарная сетка месяца, задачи по дням ---
-    from calendar import monthrange, month_name as _mn
+    from calendar import month_name as _mn
+    from calendar import monthrange
     now = datetime.now()
     month = month or now.month
     year = year or now.year

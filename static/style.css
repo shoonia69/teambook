@@ -857,3 +857,21 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
 .danger-zone .section-title { color: var(--danger); }
 .restore-file-row { display: grid; gap: var(--space-2); margin-bottom: var(--space-3); }
 @media (max-width: 560px) { .settings-section { padding: var(--space-4); } .settings-section-head, .password-field { flex-wrap: wrap; } .password-field .btn { width: 100%; min-height: 44px; } }
+
+/* ---------- optional responsive hardening ---------- */
+.kb-col-name, .kb-card-title, .todo-title, .body-text, .employee-facts strong, .notif-txt {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.employee-summary-head > div:first-child, .settings-section-head > * { min-width: 0; }
+.restore-file-row input[type="file"] { min-width: 0; max-width: 100%; }
+.action-menu-panel { max-width: calc(100vw - 16px); overflow-wrap: anywhere; }
+@media (max-width: 560px) {
+  .action-menu-panel { position: fixed; inset-inline: 8px; width: auto; min-width: 0; }
+  .kb-grip, .kb-column-menu-trigger, .btn-xs, .modal-x, .todo-primary-action .btn, .employee-tabs button {
+    min-inline-size: 44px;
+    min-block-size: 44px;
+  }
+  .status-chip { white-space: normal; }
+  .notif-item-row { flex-wrap: wrap; }
+}

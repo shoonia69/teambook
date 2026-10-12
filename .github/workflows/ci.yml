@@ -29,7 +29,7 @@ jobs:
           uv pip compile requirements.txt --python-version 3.12 --python-platform linux --no-annotate --no-header --generate-hashes -o requirements.generated.lock
           diff -u requirements.lock requirements.generated.lock
       - name: Lint Python correctness
-        run: python -m ruff check --select E9,F app.py bot.py bot_worker.py restore_offline.py wsgi.py
+        run: python -m ruff check --select E9,F,I app.py bot.py bot_worker.py restore_offline.py wsgi.py
       - name: Audit dependencies
         run: python -m pip_audit -r requirements.lock
       - name: Compile

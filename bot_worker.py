@@ -4,17 +4,23 @@ Telegram-бот TeamBook — дублирует функции сайта (со�
 проблемы, канбан). Запускается супервизором bot.py, который передаёт
 токен и ID администратора через переменные окружения.
 """
+import logging
 import os
 import sqlite3
-import logging
 from datetime import datetime
 
 from telegram import (
-    Update, InlineKeyboardButton, InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Update,
 )
 from telegram.ext import (
-    Application, CommandHandler, CallbackQueryHandler,
-    MessageHandler, filters, ContextTypes,
+    Application,
+    CallbackQueryHandler,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")

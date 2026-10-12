@@ -120,7 +120,7 @@ window.initModal = function (opts) {
     </nav>
   <div class="user-area">
         {% if session.get('authed') %}
-          <button class="btn btn-xs" id="themeToggle" title="Светлая/тёмная тема" type="button" onclick="toggleTheme()">◐</button>
+          <button class="btn btn-xs" id="themeToggle" title="Светлая/тёмная тема" type="button" aria-pressed="false" aria-label="Включить светлую тему" onclick="toggleTheme()">◐</button>
           {% if notifications %}
         <div class="notif">
           <button class="notif-btn" id="notifBtn" aria-label="Уведомления" aria-expanded="false" aria-controls="notifDrop">
@@ -189,16 +189,25 @@ window.initModal = function (opts) {
 <script>
 /* Тема: светлая/тёмная, выбор сохраняется в localStorage */
 (function () {
+  function syncThemeButton() {
+    var button = document.getElementById('themeToggle');
+    if (!button) return;
+    var light = document.documentElement.getAttribute('data-theme') === 'light';
+    button.setAttribute('aria-pressed', light ? 'true' : 'false');
+    button.setAttribute('aria-label', light ? 'Включить тёмную тему' : 'Включить светлую тему');
+  }
   try {
     var saved = localStorage.getItem('tb_theme');
     if (saved === 'light') document.documentElement.setAttribute('data-theme', 'light');
   } catch (e) {}
+  document.addEventListener('DOMContentLoaded', syncThemeButton);
   window.toggleTheme = function () {
     var cur = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : '';
     var next = cur === 'light' ? '' : 'light';
     if (next) document.documentElement.setAttribute('data-theme', 'light');
     else document.documentElement.removeAttribute('data-theme');
     try { localStorage.setItem('tb_theme', next); } catch (e) {}
+    syncThemeButton();
   };
 })();
 /* Адаптивное расширение textarea по высоте содержимого (без полос прокрутки) */
