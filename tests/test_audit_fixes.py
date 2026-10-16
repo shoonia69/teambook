@@ -83,11 +83,11 @@ def test_board_card_displays_dates_as_day_month(app_env, client):
     assert "Срок: 05-07–11-23" not in html
 
 
-def test_archive_links_to_next_day(client):
+def test_archive_legacy_day_link_maps_to_single_day_period(client):
     yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
     html = client.get("/todo/archive?date=" + yesterday).get_data(as_text=True)
-    assert "Следующий день" in html
-    assert datetime.date.today().isoformat() in html
+    assert f'name="date_from" value="{yesterday}"' in html
+    assert f'name="date_to" value="{yesterday}"' in html
 
 
 def test_todo_delegation_preserves_due_date(app_env, client):

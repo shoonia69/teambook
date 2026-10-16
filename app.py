@@ -3061,29 +3061,27 @@ QUADRANTS = [
 @app.route("/todo/archive")
 @login_required
 def todo_archive():
-    """Архив личного todo: выполненные за выбранный день (по умолчанию — сегодня)."""
+    """Архив личного todo: выполненные за выбранный включительный период."""
     db = get_db()
     today_s = date.today().isoformat()
-    day = request.args.get("date", "").strip() or today_s
-    if day > today_s:
-        day = today_s
+    legacy_day = request.args.get("date", "").strip()
+    date_from = request.args.get("date_from", "").strip() or legacy_day or today_s
+    date_to = request.args.get("date_to", "").strip() or legacy_day or today_s
+    if not _valid_iso_date(date_from) or not _valid_iso_date(date_to):
+        abort(400, "Некорректный период архива")
+    if date_from > date_to:
+        abort(400, "Начало периода позже окончания")
+    if date_to > today_s:
+        date_to = today_s
+    if date_from > date_to:
+        date_from = date_to
     items = db.execute(
-        "SELECT * FROM todo_items WHERE status='done' AND done_date=? "
-        "ORDER BY id DESC", (day,)
+        "SELECT * FROM todo_items WHERE status='done' AND done_date BETWEEN ? AND ? "
+        "ORDER BY done_date DESC, id DESC", (date_from, date_to)
     ).fetchall()
-    prev_d = next_d = None
-    try:
-        from datetime import timedelta
-        d = datetime.strptime(day, "%Y-%m-%d").date()
-        if d - timedelta(days=1) >= datetime(2026, 1, 1).date():
-            prev_d = (d - timedelta(days=1)).isoformat()
-        if d < date.today():
-            next_d = (d + timedelta(days=1)).isoformat()
-    except Exception:
-        pass
     return render_template(
-            "todo_archive.html", archive=items, day=day,
-            prev=prev_d, next=next_d, todays=today_s)
+        "todo_archive.html", archive=items, date_from=date_from,
+        date_to=date_to, todays=today_s)
 
 
 @app.route("/todo/add", methods=["POST"])
