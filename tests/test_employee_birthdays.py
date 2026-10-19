@@ -36,7 +36,7 @@ def test_invalid_birthday_is_rejected_without_employee_creation(app_env, client)
     assert row is None
 
 
-def test_notifications_have_separate_upcoming_birthdays_group(app_env, client, monkeypatch):
+def test_topbar_has_separate_upcoming_birthdays_field(app_env, client, monkeypatch):
     class FixedDate(date):
         @classmethod
         def today(cls):
@@ -67,5 +67,25 @@ def test_notifications_have_separate_upcoming_birthdays_group(app_env, client, m
     assert "Дни рождения · ближайшие 3 дня" in html
     assert "Сегодня День" in html
     assert "Новый Год" in html
+    birthday_html = html[html.index('class="birthday-strip"'):html.index('class="user-area"')]
     notification_html = html[html.index('id="notifDrop"'):html.index('class="more"')]
-    assert "Вне горизонта" not in notification_html
+    assert "Вне горизонта" not in birthday_html
+    assert "Сегодня День" not in notification_html
+    assert "Новый Год" not in notification_html
+    assert notifications["total"] == 0
+
+
+def test_topbar_birthday_field_has_empty_state(app_env, client):
+    html = client.get("/").get_data(as_text=True)
+
+    birthday_html = html[html.index('class="birthday-strip"'):html.index('class="user-area"')]
+    assert "Дни рождения" in birthday_html
+    assert "В ближайшие 3 дня дней рождения нет" in birthday_html
+
+
+def test_birthday_field_mobile_layout_is_compact():
+    css = open("static/style.css", encoding="utf-8").read()
+    mobile = css[css.index("@media (max-width: 860px)"):]
+
+    assert ".topbar { position: static;" in mobile
+    assert ".birthday-strip { order: 3; width: 100%;" in mobile

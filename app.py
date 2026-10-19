@@ -1237,7 +1237,7 @@ def _notifications(db):
     soon = soon[:10]
     birthdays = birthdays[:10]
     return {"overdue": overdue, "soon": soon, "birthdays": birthdays,
-            "total": len(overdue) + len(soon) + len(birthdays)}
+            "total": len(overdue) + len(soon)}
 
 
 @app.context_processor

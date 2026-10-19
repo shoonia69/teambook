@@ -119,6 +119,23 @@ window.initModal = function (opts) {
       <a href="{{ url_for('todo_page') }}" {% if nav_section == 'todo' %}class="active" aria-current="page"{% endif %}>Мои задачи{% if todo_cnt %}<span class="nav-badge">{{ '99+' if todo_cnt > 99 else todo_cnt }}</span>{% endif %}</a>
       <a href="{{ url_for('problems_page') }}" {% if nav_section == 'problems' %}class="active" aria-current="page"{% endif %}>Проблемы{% if problems_count %}<span class="nav-badge">{{ '99+' if problems_count > 99 else problems_count }}</span>{% endif %}</a>
     </nav>
+  {% if session.get('authed') and notifications %}
+    <section class="birthday-strip" aria-label="Ближайшие дни рождения">
+      <span class="birthday-strip-title">Дни рождения · ближайшие 3 дня</span>
+      {% if notifications.birthdays %}
+        <span class="birthday-strip-list">
+          {% for n in notifications.birthdays %}
+            <a class="birthday-strip-item" href="{{ url_for('employee_view', eid=n.id) }}">
+              <span>{{ n.name }}</span>
+              <span class="birthday-strip-date">{% if n.days == 0 %}Сегодня{% elif n.days == 1 %}Завтра{% else %}Через {{ n.days }} дня{% endif %} · {{ n.date[8:10] }}-{{ n.date[5:7] }}</span>
+            </a>
+          {% endfor %}
+        </span>
+      {% else %}
+        <span class="birthday-strip-empty">В ближайшие 3 дня дней рождения нет</span>
+      {% endif %}
+    </section>
+  {% endif %}
   <div class="user-area">
         {% if session.get('authed') %}
           <button class="btn btn-xs" id="themeToggle" title="Светлая/тёмная тема" type="button" aria-pressed="false" aria-label="Включить светлую тему" onclick="toggleTheme()">{{ icon('theme') }}</button>
@@ -149,17 +166,7 @@ window.initModal = function (opts) {
               {% endfor %}
             </div>
             {% endif %}
-            {% if notifications.birthdays %}
-            <div class="notif-group"><div class="notif-title">Дни рождения · ближайшие 3 дня</div>
-              {% for n in notifications.birthdays %}
-              <a class="notif-item birthday" href="{{ url_for('employee_view', eid=n.id) }}">
-                <div class="notif-item-row"><span class="notif-txt">{{ n.name }}</span><span class="notif-date">{{ n.date[8:10] }}-{{ n.date[5:7] }}</span></div>
-                <div class="notif-meta">{% if n.days == 0 %}Сегодня{% elif n.days == 1 %}Завтра{% else %}Через {{ n.days }} дня{% endif %}</div>
-              </a>
-              {% endfor %}
-            </div>
-            {% endif %}
-            {% if not notifications.overdue and not notifications.soon and not notifications.birthdays %}
+            {% if not notifications.overdue and not notifications.soon %}
             <div class="notif-empty">Горизонт уведомлений пуст ✓</div>
             {% endif %}
           </div>

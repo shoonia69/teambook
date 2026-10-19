@@ -94,6 +94,20 @@ a:hover { text-decoration: underline; }
   font-size: 11px; font-weight: 700; line-height: 17px; text-align: center;
   vertical-align: middle;
 }
+.birthday-strip {
+  display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 520px;
+  padding: 7px 10px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--panel2); color: var(--text); font-size: 12px;
+}
+.birthday-strip-title { color: var(--muted); font-weight: 600; white-space: nowrap; }
+.birthday-strip-list { display: flex; align-items: center; gap: 6px; min-width: 0; overflow-x: auto; }
+.birthday-strip-item {
+  display: inline-flex; align-items: baseline; gap: 5px; min-width: max-content;
+  padding: 3px 7px; border-radius: 7px; background: var(--panel); color: var(--text);
+  text-decoration: none; font-weight: 600;
+}
+.birthday-strip-item:hover { border-color: var(--accent); text-decoration: none; }
+.birthday-strip-date, .birthday-strip-empty { color: var(--muted); font-weight: 400; white-space: nowrap; }
 .user-area .logout { color: var(--muted); }
 .user-area .logout:hover { color: var(--danger); text-decoration: none; }
 
@@ -677,10 +691,11 @@ details.accordion > summary .mktoggle { color: var(--muted); font-size: 15px; }
 
 /* ---------- адаптивность: планшеты и мобильные ---------- */
 @media (max-width: 860px) {
-  .topbar { flex-wrap: wrap; height: auto; padding: 8px 12px; gap: 10px; }
+  .topbar { position: static; flex-wrap: wrap; height: auto; padding: 8px 12px; gap: 10px; }
   .nav { gap: 12px; order: 3; flex: 0 0 100%; overflow-x: auto; overflow-y: visible; padding-bottom: 12px; }
   .nav a { white-space: nowrap; min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; justify-content: center; }
   .user-area { margin-left: auto; }
+  .birthday-strip { order: 3; width: 100%; max-width: none; }
   /* touch-target ≥44×44 px */
   .notif-btn { width: 44px; height: 44px; }
   .more-btn { min-width: 44px; height: 44px; }
