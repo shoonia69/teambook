@@ -8,6 +8,7 @@ EXPECTED_LEDGER = [
     (1, "baseline"),
     (2, "versioned-runner"),
     (3, "drop-legacy-space-owner"),
+    (4, "add-employee-birth-date"),
 ]
 
 

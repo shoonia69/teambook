@@ -20,6 +20,7 @@
   </div>
   <div class="employee-facts">
     <div><span>Зарплата</span><strong>{{ emp.salary or 'Не указана' }}</strong></div><div><span>Дата найма</span><strong>{% if emp.hire_date %}принят с {{ (emp.hire_date or '')[:10] }}{% else %}Не указана{% endif %}</strong></div>
+    <div><span>Дата рождения</span><strong>{% if emp.birth_date %}{{ emp.birth_date[8:10] }}-{{ emp.birth_date[5:7] }}-{{ emp.birth_date[:4] }}{% else %}Не указана{% endif %}</strong></div>
     <div><span>Активные проблемы</span><strong>{{ problems|length }}</strong></div><div><span>Последняя 1-на-1</span><strong>{{ (meetings[0].date or '')[:10] if meetings else 'Нет встреч' }}</strong></div>
   </div>
   {% if emp_tags %}<div class="emp-tags">{% for t in emp_tags %}<span class="tag-chip" style="--c:{{ t.color }}">{{ t.name }}</span>{% endfor %}</div>{% endif %}

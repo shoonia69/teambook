@@ -191,6 +191,7 @@ CREATE TABLE IF NOT EXISTS employees (
     department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL,
     salary        TEXT DEFAULT '',
     hire_date     TEXT DEFAULT '',
+    birth_date    TEXT DEFAULT '',
     notes         TEXT DEFAULT '',
     active        INTEGER DEFAULT 1,
     created_at    TEXT DEFAULT (datetime('now'))
@@ -672,9 +673,17 @@ def _migration_drop_legacy_space_owner(db):
             db.execute(f"ALTER TABLE {table} DROP COLUMN space_owner")
 
 
+def _migration_add_employee_birth_date(db):
+    """Добавляет необязательную дату рождения сотрудника."""
+    columns = {row[1] for row in db.execute("PRAGMA table_info(employees)")}
+    if "birth_date" not in columns:
+        db.execute("ALTER TABLE employees ADD COLUMN birth_date TEXT DEFAULT ''")
+
+
 MIGRATIONS = (
     (2, "versioned-runner", _migration_versioned_runner),
     (3, "drop-legacy-space-owner", _migration_drop_legacy_space_owner),
+    (4, "add-employee-birth-date", _migration_add_employee_birth_date),
 )
 
 
@@ -1200,10 +1209,35 @@ def _notifications(db):
             overdue.append(item)
         else:
             soon.append(item)
+    birthdays = []
+    for employee in db.execute(
+            "SELECT id, name, birth_date FROM employees "
+            "WHERE active=1 AND birth_date!='' ORDER BY name").fetchall():
+        try:
+            born = date.fromisoformat(employee["birth_date"])
+            try:
+                upcoming = date(today.year, born.month, born.day)
+            except ValueError:  # 29 февраля в невисокосный год
+                upcoming = date(today.year, 2, 28)
+            if upcoming < today:
+                try:
+                    upcoming = date(today.year + 1, born.month, born.day)
+                except ValueError:
+                    upcoming = date(today.year + 1, 2, 28)
+            days = (upcoming - today).days
+            if days <= 3:
+                birthdays.append({
+                    "id": employee["id"], "name": employee["name"],
+                    "date": upcoming.isoformat(), "days": days,
+                })
+        except (TypeError, ValueError):
+            continue
+    birthdays.sort(key=lambda item: (item["days"], item["name"].lower()))
     overdue = overdue[:15]
     soon = soon[:10]
-    return {"overdue": overdue, "soon": soon,
-            "total": len(overdue) + len(soon)}
+    birthdays = birthdays[:10]
+    return {"overdue": overdue, "soon": soon, "birthdays": birthdays,
+            "total": len(overdue) + len(soon) + len(birthdays)}
 
 
 @app.context_processor
@@ -1527,21 +1561,24 @@ def _save_employee(eid):
     did = _clean_int(request.form.get("department_id"))
     salary = request.form.get("salary", "").strip()
     hire_date = request.form.get("hire_date", "").strip()
+    birth_date = request.form.get("birth_date", "").strip()
     if not _valid_iso_date(hire_date):
         abort(400, "Некорректная дата приёма")
+    if not _valid_iso_date(birth_date):
+        abort(400, "Некорректная дата рождения")
 
     if eid is None:
         cur = db.execute(
-            "INSERT INTO employees (name, position_id, department_id, salary, hire_date) "
-            "VALUES (?,?,?,?,?)",
-            (name, pid, did, salary, hire_date),
+            "INSERT INTO employees (name, position_id, department_id, salary, hire_date, birth_date) "
+            "VALUES (?,?,?,?,?,?)",
+            (name, pid, did, salary, hire_date, birth_date),
         )
         eid = cur.lastrowid
     else:
         db.execute(
-            "UPDATE employees SET name=?, position_id=?, department_id=?, salary=?, hire_date=? "
+            "UPDATE employees SET name=?, position_id=?, department_id=?, salary=?, hire_date=?, birth_date=? "
             "WHERE id=?",
-            (name, pid, did, salary, hire_date, eid),
+            (name, pid, did, salary, hire_date, birth_date, eid),
         )
     # Теги сотрудника (many-to-many) — перезапись связей
     _save_employee_tags(db, eid, request.form.getlist("tag_ids"))

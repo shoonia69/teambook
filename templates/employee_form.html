@@ -37,6 +37,10 @@
         <input type="date" name="hire_date" value="{{ emp.hire_date or '' }}" style="max-width:220px">
       </div>
       <div class="full">
+        <label>Дата рождения (пусто = не указана)</label>
+        <input type="date" name="birth_date" value="{{ emp.birth_date or '' }}" style="max-width:220px">
+      </div>
+      <div class="full">
         <label>Теги</label>
         <div class="tag-select">
           {% for t in tags %}
